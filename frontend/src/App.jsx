@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  BarChart3,
+  ChevronDown,
+  History,
+  LayoutDashboard,
+  Map,
+  UserCog,
+  UserRound,
+} from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
 import { API_URL, getUploads, login, uploadTile } from "./api";
 
-const tabs = [
-  { key: "dashboard", label: "Обзор" },
-  { key: "uploads", label: "Загрузки" },
-  { key: "map", label: "Карта" },
-  { key: "analytics", label: "Аналитика" },
-  { key: "profile", label: "Профиль" },
+const menuItems = [
+  { key: "maps", label: "Карты", icon: Map },
+  { key: "analytics", label: "Аналитика / Статистика", icon: BarChart3 },
+  { key: "history", label: "История загрузок космоснимков", icon: History },
+  { key: "profile", label: "Личный кабинет", icon: UserRound },
 ];
 
 function formatDate(value) {
@@ -15,7 +23,8 @@ function formatDate(value) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState("maps");
+  const [baseLayer, setBaseLayer] = useState("scheme");
   const [uploads, setUploads] = useState([]);
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [role, setRole] = useState(localStorage.getItem("role") || "viewer");
@@ -37,11 +46,14 @@ export default function App() {
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
 
-  const withAdminTab = useMemo(() => {
+  const fullMenu = useMemo(() => {
     if (isAdmin) {
-      return [...tabs, { key: "admin", label: "Админ-панель" }];
+      return [
+        ...menuItems,
+        { key: "admin", label: "Администрирование", icon: UserCog },
+      ];
     }
-    return tabs;
+    return menuItems;
   }, [isAdmin]);
 
   async function loadUploads() {
@@ -108,7 +120,7 @@ export default function App() {
       setFile(null);
       setTileForm({ title: "", z: "", x: "", y: "" });
       await loadUploads();
-      setActiveTab("uploads");
+      setActiveTab("history");
     } catch (error) {
       setStatus(`Ошибка загрузки: ${error.message}`);
     } finally {
@@ -117,60 +129,79 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <div>
-          <h1>SpaceVision</h1>
-          <p>Хранилище космоснимков с подготовкой к анализу дорог нейросетью.</p>
+    <div className="layout">
+      <aside className="sidebar">
+        <div className="brand">
+          <LayoutDashboard size={18} />
+          <div>
+            <strong>SpaceVision</strong>
+            <span>Диспетчер космоснимков</span>
+          </div>
         </div>
-        <div className="auth">
-          {token ? (
-            <>
-              <span>{username || "Пользователь"} ({role})</span>
-              <button onClick={handleLogout}>Выйти</button>
-            </>
-          ) : (
-            <form onSubmit={handleLogin} className="login-form">
-              <input
-                placeholder="Логин"
-                value={credentials.username}
-                onChange={(event) =>
-                  setCredentials((prev) => ({ ...prev, username: event.target.value }))
-                }
-              />
-              <input
-                placeholder="Пароль"
-                type="password"
-                value={credentials.password}
-                onChange={(event) =>
-                  setCredentials((prev) => ({ ...prev, password: event.target.value }))
-                }
-              />
-              <button type="submit">Войти</button>
-            </form>
-          )}
-        </div>
-      </header>
+        <nav className="menu">
+          {fullMenu.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.key}
+                className={activeTab === item.key ? "menu-item active" : "menu-item"}
+                onClick={() => setActiveTab(item.key)}
+              >
+                <span className="menu-left">
+                  <Icon size={17} />
+                  {item.label}
+                </span>
+                <ChevronDown size={16} />
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
 
-      <nav className="tabs">
-        {withAdminTab.map((tab) => (
-          <button
-            key={tab.key}
-            className={activeTab === tab.key ? "tab active" : "tab"}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+      <div className="workspace">
+        <header className="topbar">
+          <div>
+            <h1>SpaceVision</h1>
+            <p>Платформа для работы с космоснимками и картографическими слоями.</p>
+          </div>
+          <div className="auth">
+            {token ? (
+              <>
+                <span className="user-badge">
+                  {username || "Пользователь"} ({role})
+                </span>
+                <button onClick={handleLogout}>Выйти</button>
+              </>
+            ) : (
+              <form onSubmit={handleLogin} className="login-form">
+                <input
+                  placeholder="Логин"
+                  value={credentials.username}
+                  onChange={(event) =>
+                    setCredentials((prev) => ({ ...prev, username: event.target.value }))
+                  }
+                />
+                <input
+                  placeholder="Пароль"
+                  type="password"
+                  value={credentials.password}
+                  onChange={(event) =>
+                    setCredentials((prev) => ({ ...prev, password: event.target.value }))
+                  }
+                />
+                <button type="submit">Войти</button>
+              </form>
+            )}
+          </div>
+        </header>
 
-      {status && <div className="status">{status}</div>}
+        {status && <div className="status">{status}</div>}
 
-      <main className="content">
-        {activeTab === "dashboard" && (
+        <main className="content">
+          {activeTab === "analytics" && (
           <section className="grid">
             <article className="card">
-              <h2>Что уже готово</h2>
+              <h2>Аналитика / Статистика</h2>
               <ul>
                 <li>Загрузка тайлов и метаданных (z/x/y)</li>
                 <li>История всех загрузок</li>
@@ -179,19 +210,7 @@ export default function App() {
               </ul>
             </article>
             <article className="card">
-              <h2>Следующий этап</h2>
-              <p>
-                После подключения нейросети сюда добавится детекция дорог и
-                визуализация контуров на карте.
-              </p>
-            </article>
-          </section>
-        )}
-
-        {activeTab === "uploads" && (
-          <section className="grid">
-            <article className="card">
-              <h2>Новая загрузка</h2>
+              <h2>Загрузка космоснимков</h2>
               <form onSubmit={handleUpload} className="upload-form">
                 <input
                   placeholder="Название снимка"
@@ -240,7 +259,60 @@ export default function App() {
               {!canUpload && <p>Для загрузки войдите в аккаунт.</p>}
             </article>
             <article className="card">
-              <h2>История загрузок</h2>
+              <h2>Раздел аналитики</h2>
+              <p>Этот раздел является заготовкой на будущее.</p>
+            </article>
+          </section>
+          )}
+
+          {activeTab === "maps" && (
+            <section className="card map-card">
+              <div className="map-toolbar">
+                <div>
+                  <h2>Карты</h2>
+                  <p>Доступны режимы отображения: схема и спутниковая подложка.</p>
+                </div>
+                <div className="layer-switcher">
+                  <button
+                    className={baseLayer === "scheme" ? "layer-btn active" : "layer-btn"}
+                    onClick={() => setBaseLayer("scheme")}
+                  >
+                    Схема
+                  </button>
+                  <button
+                    className={
+                      baseLayer === "satellite" ? "layer-btn active" : "layer-btn"
+                    }
+                    onClick={() => setBaseLayer("satellite")}
+                  >
+                    Спутник
+                  </button>
+                </div>
+              </div>
+              <MapContainer center={[52.1, 107.5]} zoom={8} className="map">
+                {baseLayer === "scheme" ? (
+                  <TileLayer
+                    attribution='&copy; OpenStreetMap contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                ) : (
+                  <TileLayer
+                    attribution="Tiles &copy; Esri"
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                  />
+                )}
+                <TileLayer
+                  attribution="Uploaded Tiles"
+                  url={`${API_URL}/tiles/{z}/{x}/{y}`}
+                  opacity={0.75}
+                />
+              </MapContainer>
+            </section>
+          )}
+
+          {activeTab === "history" && (
+            <section className="card">
+              <h2>История загрузок космоснимков</h2>
               <div className="history">
                 {uploads.length === 0 ? (
                   <p>Пока нет загрузок.</p>
@@ -256,58 +328,27 @@ export default function App() {
                   ))
                 )}
               </div>
-            </article>
-          </section>
-        )}
+            </section>
+          )}
 
-        {activeTab === "map" && (
-          <section className="card map-card">
-            <h2>Карта и тайлы Бурятии</h2>
-            <p>Слой `Uploaded Tiles` читает ваши тайлы через API по z/x/y.</p>
-            <MapContainer center={[52.1, 107.5]} zoom={8} className="map">
-              <TileLayer
-                attribution='&copy; OpenStreetMap contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <TileLayer
-                attribution="Uploaded Tiles"
-                url={`${API_URL}/tiles/{z}/{x}/{y}`}
-                opacity={0.75}
-              />
-            </MapContainer>
-          </section>
-        )}
-
-        {activeTab === "analytics" && (
-          <section className="card">
-            <h2>Аналитика (заготовка)</h2>
-            <p>
-              Здесь появятся результаты нейросети: маски дорог, площадь покрытия и
-              экспорт GeoJSON.
-            </p>
-          </section>
-        )}
-
-        {activeTab === "profile" && (
+          {activeTab === "profile" && (
           <section className="card">
             <h2>Личный кабинет</h2>
             <p>Имя: {username || "Гость"}</p>
             <p>Роль: {role}</p>
             <p>Загружено снимков: {uploads.length}</p>
           </section>
-        )}
+          )}
 
-        {activeTab === "admin" && isAdmin && (
+          {activeTab === "admin" && isAdmin && (
           <section className="card">
             <h2>Админ-панель</h2>
             <p>Загружено тайлов в системе: {uploads.length}</p>
-            <p>
-              Для следующих этапов: управление пользователями, аудит действий,
-              ручная валидация датасета.
-            </p>
+            <p>Этот раздел является заготовкой на будущее.</p>
           </section>
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
