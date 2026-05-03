@@ -1,0 +1,150 @@
+:root {
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  color: #12325a;
+  background: #f3f8ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #f7fbff 0%, #ebf2ff 100%);
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  margin: 0;
+  color: #104a8e;
+}
+
+h2 {
+  margin-top: 0;
+  color: #155da8;
+}
+
+.auth,
+.login-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+input,
+button {
+  border-radius: 10px;
+  border: 1px solid #bfd8fb;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #12325a;
+}
+
+button {
+  background: #1f70d1;
+  border-color: #1f70d1;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1b63bb;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tab {
+  background: #d9eaff;
+  color: #0d4f9b;
+  border: 1px solid #b8d6ff;
+}
+
+.tab.active {
+  background: #1f70d1;
+  color: #fff;
+}
+
+.status {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #deecff;
+  border: 1px solid #bed8fe;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #cee1ff;
+  padding: 18px;
+  box-shadow: 0 8px 20px rgba(30, 87, 168, 0.07);
+}
+
+.upload-form,
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inputs-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.history-item {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #e3eeff;
+  background: #f7fbff;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-card .map {
+  width: 100%;
+  height: 460px;
+  border-radius: 12px;
+  margin-top: 10px;
+}
+
+@media (max-width: 800px) {
+  .header {
+    flex-direction: column;
+  }
+
+  .login-form {
+    flex-wrap: wrap;
+  }
+}
