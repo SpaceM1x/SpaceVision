@@ -13,6 +13,32 @@ body {
   background: #eaf1fb;
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  background: #ffffff;
+  border: 1px solid #cee1ff;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 12px 30px rgba(30, 87, 168, 0.12);
+}
+
+.auth-subtitle {
+  margin: 8px 0 16px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .layout {
   min-height: 100vh;
   display: grid;
@@ -167,6 +193,13 @@ button:hover {
   gap: 10px;
 }
 
+.history-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 170px 170px;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .inputs-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -241,6 +274,10 @@ button:hover {
 
   .login-form {
     flex-wrap: wrap;
+  }
+
+  .history-filters {
+    grid-template-columns: 1fr;
   }
 
   .map-card .map {

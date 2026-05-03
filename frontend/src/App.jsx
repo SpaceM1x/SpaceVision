@@ -5,6 +5,7 @@ import {
   History,
   LayoutDashboard,
   Map,
+  Upload,
   UserCog,
   UserRound,
 } from "lucide-react";
@@ -13,7 +14,8 @@ import { API_URL, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
   { key: "maps", label: "Карты", icon: Map },
-  { key: "analytics", label: "Аналитика / Статистика", icon: BarChart3 },
+  { key: "upload", label: "Загрузка космоснимков", icon: Upload },
+  { key: "statistics", label: "Статистика", icon: BarChart3 },
   { key: "history", label: "История загрузок космоснимков", icon: History },
   { key: "profile", label: "Личный кабинет", icon: UserRound },
 ];
@@ -42,6 +44,9 @@ export default function App() {
     password: "",
   });
   const [file, setFile] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -55,6 +60,22 @@ export default function App() {
     }
     return menuItems;
   }, [isAdmin]);
+
+  const filteredUploads = useMemo(() => {
+    return uploads.filter((upload) => {
+      const normalizedTitle = upload.title.toLowerCase();
+      const matchesTitle = normalizedTitle.includes(searchQuery.toLowerCase().trim());
+      const uploadDate = new Date(upload.created_at);
+
+      const fromBoundary = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+      const toBoundary = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
+
+      const matchesFrom = fromBoundary ? uploadDate >= fromBoundary : true;
+      const matchesTo = toBoundary ? uploadDate <= toBoundary : true;
+
+      return matchesTitle && matchesFrom && matchesTo;
+    });
+  }, [uploads, searchQuery, dateFrom, dateTo]);
 
   async function loadUploads() {
     if (!token) {
@@ -83,7 +104,7 @@ export default function App() {
       setToken(result.access_token);
       setRole(result.role);
       setUsername(result.username);
-      setStatus(`Вход выполнен: ${result.username}`);
+      setStatus("");
       setCredentials({ username: "", password: "" });
     } catch (error) {
       setStatus(`Ошибка входа: ${error.message}`);
@@ -98,7 +119,7 @@ export default function App() {
     setRole("viewer");
     setUsername("");
     setUploads([]);
-    setStatus("Вы вышли из системы.");
+    setStatus("");
   }
 
   async function handleUpload(event) {
@@ -126,6 +147,38 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (!token) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1>SpaceVision</h1>
+          <p className="auth-subtitle">
+            Войдите в систему для работы с космоснимками и картой.
+          </p>
+          <form onSubmit={handleLogin} className="auth-form">
+            <input
+              placeholder="Логин"
+              value={credentials.username}
+              onChange={(event) =>
+                setCredentials((prev) => ({ ...prev, username: event.target.value }))
+              }
+            />
+            <input
+              placeholder="Пароль"
+              type="password"
+              value={credentials.password}
+              onChange={(event) =>
+                setCredentials((prev) => ({ ...prev, password: event.target.value }))
+              }
+            />
+            <button type="submit">Войти</button>
+          </form>
+          {status && <div className="status">{status}</div>}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -165,50 +218,18 @@ export default function App() {
             <p>Платформа для работы с космоснимками и картографическими слоями.</p>
           </div>
           <div className="auth">
-            {token ? (
-              <>
-                <span className="user-badge">
-                  {username || "Пользователь"} ({role})
-                </span>
-                <button onClick={handleLogout}>Выйти</button>
-              </>
-            ) : (
-              <form onSubmit={handleLogin} className="login-form">
-                <input
-                  placeholder="Логин"
-                  value={credentials.username}
-                  onChange={(event) =>
-                    setCredentials((prev) => ({ ...prev, username: event.target.value }))
-                  }
-                />
-                <input
-                  placeholder="Пароль"
-                  type="password"
-                  value={credentials.password}
-                  onChange={(event) =>
-                    setCredentials((prev) => ({ ...prev, password: event.target.value }))
-                  }
-                />
-                <button type="submit">Войти</button>
-              </form>
-            )}
+            <span className="user-badge">
+              {username || "Пользователь"} ({role})
+            </span>
+            <button onClick={handleLogout}>Выйти</button>
           </div>
         </header>
 
         {status && <div className="status">{status}</div>}
 
         <main className="content">
-          {activeTab === "analytics" && (
+          {activeTab === "upload" && (
           <section className="grid">
-            <article className="card">
-              <h2>Аналитика / Статистика</h2>
-              <ul>
-                <li>Загрузка тайлов и метаданных (z/x/y)</li>
-                <li>История всех загрузок</li>
-                <li>Роли: пользователь и админ</li>
-                <li>Карта Leaflet с слоем ваших тайлов</li>
-              </ul>
-            </article>
             <article className="card">
               <h2>Загрузка космоснимков</h2>
               <form onSubmit={handleUpload} className="upload-form">
@@ -258,8 +279,21 @@ export default function App() {
               </form>
               {!canUpload && <p>Для загрузки войдите в аккаунт.</p>}
             </article>
+          </section>
+          )}
+
+          {activeTab === "statistics" && (
+          <section className="grid">
             <article className="card">
-              <h2>Раздел аналитики</h2>
+              <h2>Статистика</h2>
+              <ul>
+                <li>Всего загружено снимков: {uploads.length}</li>
+                <li>Активная роль: {role}</li>
+                <li>Текущий пользователь: {username}</li>
+              </ul>
+            </article>
+            <article className="card">
+              <h2>Аналитический модуль</h2>
               <p>Этот раздел является заготовкой на будущее.</p>
             </article>
           </section>
@@ -313,11 +347,29 @@ export default function App() {
           {activeTab === "history" && (
             <section className="card">
               <h2>История загрузок космоснимков</h2>
+              <div className="history-filters">
+                <input
+                  type="text"
+                  placeholder="Поиск по названию снимка"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(event) => setDateFrom(event.target.value)}
+                />
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(event) => setDateTo(event.target.value)}
+                />
+              </div>
               <div className="history">
-                {uploads.length === 0 ? (
-                  <p>Пока нет загрузок.</p>
+                {filteredUploads.length === 0 ? (
+                  <p>По выбранным фильтрам ничего не найдено.</p>
                 ) : (
-                  uploads.map((upload) => (
+                  filteredUploads.map((upload) => (
                     <div className="history-item" key={upload.id}>
                       <strong>{upload.title}</strong>
                       <span>{formatDate(upload.created_at)}</span>
