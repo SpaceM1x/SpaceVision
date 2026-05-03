@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
-  ChevronDown,
   History,
   LayoutDashboard,
   Map,
@@ -202,9 +201,8 @@ export default function App() {
               >
                 <span className="menu-left">
                   <Icon size={17} />
-                  {item.label}
+                  <span className="menu-label">{item.label}</span>
                 </span>
-                <ChevronDown size={16} />
               </button>
             );
           })}
