@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,19 @@ from .schemas import LoginRequest, LoginResponse, UploadOut
 
 app = FastAPI(title="SpaceVision API")
 
+
+class IgnoreMissingTileAccessLog(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return '"/tiles/' not in message or " 404 " not in message
+
+
+def configure_access_logging():
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(log_filter, IgnoreMissingTileAccessLog) for log_filter in access_logger.filters):
+        access_logger.addFilter(IgnoreMissingTileAccessLog())
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -25,6 +39,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
+    configure_access_logging()
     Base.metadata.create_all(bind=engine)
     ensure_default_users()
 
