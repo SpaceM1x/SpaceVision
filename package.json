@@ -1,0 +1,10 @@
+{
+  "name": "spacevision",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"python -m uvicorn app.main:app --reload --app-dir backend\" \"npm run dev --prefix frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

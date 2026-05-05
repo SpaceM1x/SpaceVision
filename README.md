@@ -10,25 +10,25 @@
 
 ## Быстрый запуск
 
-### 1) Backend
+### Одной командой
 
 ```bash
-cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
-```
-
-Backend: `http://127.0.0.1:8000`
-
-### 2) Frontend
-
-```bash
-cd frontend
 npm install
-npm run dev
+npm start
 ```
 
-Frontend: `http://127.0.0.1:5173`
+Команда запустит:
+
+- Backend: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:5173`
+
+### Если запускаете впервые
+
+Установите Python-зависимости backend один раз:
+
+```bash
+python -m pip install -r backend/requirements.txt
+```
 
 ## Демо-аккаунты
 
