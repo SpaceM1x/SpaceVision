@@ -19,7 +19,9 @@ app = FastAPI(title="SpaceVision API")
 class IgnoreMissingTileAccessLog(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        return '"/tiles/' not in message or " 404 " not in message
+        is_tiles_request = "/tiles/" in message
+        is_not_found = " 404 " in message or " 404 Not Found" in message
+        return not (is_tiles_request and is_not_found)
 
 
 def configure_access_logging():
