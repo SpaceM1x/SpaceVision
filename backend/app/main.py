@@ -130,12 +130,25 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 async def create_upload(
     file: UploadFile = File(...),
     title: str = Form(...),
-    tile_z: int = Form(...),
-    tile_x: int = Form(...),
-    tile_y: int = Form(...),
+    tile_z: str = Form(default=""),
+    tile_x: str = Form(default=""),
+    tile_y: str = Form(default=""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    def parse_tile_value(raw_value: str, field_name: str) -> int:
+        value = (raw_value or "").strip()
+        if value == "":
+            return 0
+        try:
+            return int(value)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=f"Неверное значение {field_name}: {raw_value}") from error
+
+    parsed_tile_z = parse_tile_value(tile_z, "tile_z")
+    parsed_tile_x = parse_tile_value(tile_x, "tile_x")
+    parsed_tile_y = parse_tile_value(tile_y, "tile_y")
+
     extension = Path(file.filename).suffix.lower()
     if extension not in {".png", ".jpg", ".jpeg"}:
         raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG.")
@@ -153,9 +166,9 @@ async def create_upload(
     upload = Upload(
         title=title,
         file_path=str(destination),
-        tile_z=tile_z,
-        tile_x=tile_x,
-        tile_y=tile_y,
+        tile_z=parsed_tile_z,
+        tile_x=parsed_tile_x,
+        tile_y=parsed_tile_y,
         uploaded_by=current_user.username,
     )
     db.add(upload)
