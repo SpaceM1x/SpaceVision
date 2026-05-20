@@ -43,3 +43,43 @@ python -m pip install -r backend/requirements.txt
 - История загрузок
 - Карта Leaflet с наложением пользовательских тайлов через API `/tiles/{z}/{x}/{y}`
 - Заготовка вкладки аналитики для следующего этапа (нейросеть)
+
+## Обучение сегментации дорог
+
+В проект добавлена базовая структура для обучения модели сегментации дорог на космоснимках:
+
+```text
+road_segmentation/
+  data/         # сюда ляжет датасет
+  checkpoints/  # веса модели
+  outputs/      # результаты инференса
+  train.py
+  predict.py
+  requirements.txt
+```
+
+### 1) Установите зависимости
+
+```bash
+python -m pip install -r road_segmentation/requirements.txt
+```
+
+### 2) Подготовьте датасет
+
+Скопируйте данные в папку:
+
+```text
+road_segmentation/data
+```
+
+### 3) Запустите обучение
+
+```bash
+python road_segmentation/train.py --data-dir road_segmentation/data --checkpoints-dir road_segmentation/checkpoints --epochs 20
+```
+
+### 4) Запустите инференс
+
+```bash
+python road_segmentation/predict.py --image path/to/image.png --checkpoint road_segmentation/checkpoints/model.pth --output-dir road_segmentation/outputs
+```
