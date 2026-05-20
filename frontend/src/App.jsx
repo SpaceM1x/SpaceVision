@@ -3,7 +3,7 @@ import {
   BarChart3,
   History,
   LayoutDashboard,
-  Map,
+  Map as MapIcon,
   Upload,
   UserCog,
   UserRound,
@@ -12,7 +12,7 @@ import { MapContainer, TileLayer } from "react-leaflet";
 import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
-  { key: "maps", label: "Карты", icon: Map },
+  { key: "maps", label: "Карты", icon: MapIcon },
   { key: "upload", label: "Загрузка космоснимков", icon: Upload },
   { key: "statistics", label: "Статистика", icon: BarChart3 },
   { key: "history", label: "История загрузок космоснимков", icon: History },
