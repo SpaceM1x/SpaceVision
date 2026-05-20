@@ -9,11 +9,37 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from .auth import create_access_token, decode_token, hash_password, verify_password
-from .database import Base, SessionLocal, UPLOAD_DIR, engine, get_db
+from .database import Base, PREDICTION_DIR, SessionLocal, UPLOAD_DIR, engine, get_db
 from .models import Upload, User
+from .road_inference import run_road_segmentation
 from .schemas import LoginRequest, LoginResponse, UploadOut
 
 app = FastAPI(title="SpaceVision API")
+
+
+def _prediction_paths(upload: Upload) -> tuple[Path, Path]:
+    stem = Path(upload.file_path).stem
+    return (
+        PREDICTION_DIR / f"{stem}_mask.png",
+        PREDICTION_DIR / f"{stem}_overlay.png",
+    )
+
+
+def serialize_upload(upload: Upload) -> UploadOut:
+    mask_path, overlay_path = _prediction_paths(upload)
+    mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
+    overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
+    return UploadOut(
+        id=upload.id,
+        title=upload.title,
+        tile_z=upload.tile_z,
+        tile_x=upload.tile_x,
+        tile_y=upload.tile_y,
+        uploaded_by=upload.uploaded_by,
+        created_at=upload.created_at,
+        mask_url=mask_url,
+        overlay_url=overlay_url,
+    )
 
 
 class IgnoreMissingTileAccessLog(logging.Filter):
@@ -117,6 +143,12 @@ async def create_upload(
     destination = UPLOAD_DIR / filename
     content = await file.read()
     destination.write_bytes(content)
+    try:
+        run_road_segmentation(destination, PREDICTION_DIR)
+    except Exception as error:
+        if destination.exists():
+            destination.unlink()
+        raise HTTPException(status_code=500, detail=f"Ошибка инференса дорог: {error}") from error
 
     upload = Upload(
         title=title,
@@ -129,14 +161,36 @@ async def create_upload(
     db.add(upload)
     db.commit()
     db.refresh(upload)
-    return upload
+    return serialize_upload(upload)
 
 
 @app.get("/uploads", response_model=list[UploadOut])
 def list_uploads(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     del current_user
     items = db.query(Upload).order_by(Upload.created_at.desc()).all()
-    return items
+    return [serialize_upload(item) for item in items]
+
+
+@app.get("/uploads/{upload_id}/mask")
+def get_upload_mask(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    mask_path, _ = _prediction_paths(upload)
+    if not mask_path.exists():
+        raise HTTPException(status_code=404, detail="Mask not found")
+    return FileResponse(mask_path)
+
+
+@app.get("/uploads/{upload_id}/overlay")
+def get_upload_overlay(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    _, overlay_path = _prediction_paths(upload)
+    if not overlay_path.exists():
+        raise HTTPException(status_code=404, detail="Overlay not found")
+    return FileResponse(overlay_path)
 
 
 @app.get("/tiles/{z}/{x}/{y}")

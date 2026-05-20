@@ -135,8 +135,12 @@ export default function App() {
       formData.append("tile_z", tileForm.z);
       formData.append("tile_x", tileForm.x);
       formData.append("tile_y", tileForm.y);
-      await uploadTile(formData, token);
-      setStatus("Снимок загружен.");
+      const uploaded = await uploadTile(formData, token);
+      setStatus(
+        uploaded?.mask_url
+          ? "Снимок загружен. Дороги распознаны, маска готова."
+          : "Снимок загружен."
+      );
       setFile(null);
       setTileForm({ title: "", z: "", x: "", y: "" });
       await loadUploads();
@@ -374,6 +378,29 @@ export default function App() {
                       <span>
                         tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
                       </span>
+                      {(upload.mask_url || upload.overlay_url) && (
+                        <span>
+                          {upload.mask_url && (
+                            <a
+                              href={`${API_URL}${upload.mask_url}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Маска дорог
+                            </a>
+                          )}
+                          {upload.mask_url && upload.overlay_url && " · "}
+                          {upload.overlay_url && (
+                            <a
+                              href={`${API_URL}${upload.overlay_url}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Оверлей
+                            </a>
+                          )}
+                        </span>
+                      )}
                     </div>
                   ))
                 )}
