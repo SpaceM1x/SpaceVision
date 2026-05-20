@@ -233,6 +233,41 @@ button:hover {
   text-decoration: underline;
 }
 
+.history-road-metric {
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.history-road-metric-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-road-metric-head span {
+  color: #5a7ba3;
+}
+
+.history-road-metric-head strong {
+  color: #1c5fae;
+}
+
+.history-road-bar-wrap {
+  height: 9px;
+  border-radius: 999px;
+  background: #dce9fb;
+  overflow: hidden;
+}
+
+.history-road-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #36a770, #2674d0);
+}
+
 .statistics-layout {
   display: flex;
   flex-direction: column;
