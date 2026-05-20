@@ -223,6 +223,163 @@ button:hover {
   gap: 4px;
 }
 
+.history-item a {
+  color: #1a67c4;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.history-item a:hover {
+  text-decoration: underline;
+}
+
+.statistics-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stats-kpis .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.kpi-item {
+  border: 1px solid #d8e9ff;
+  background: #f7fbff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpi-item span {
+  color: #5074a7;
+  font-size: 13px;
+}
+
+.kpi-item strong {
+  color: #0f4f99;
+  font-size: 19px;
+}
+
+.pie-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.pie-chart {
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.pie-inner {
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  background: white;
+  border: 1px solid #d7e8ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4px;
+}
+
+.pie-inner strong {
+  color: #0d4a8f;
+  font-size: 18px;
+}
+
+.pie-inner span {
+  color: #5a7da9;
+  font-size: 12px;
+}
+
+.chart-caption {
+  margin-top: 10px;
+  color: #5a79a0;
+}
+
+.trend-chart-wrap {
+  border: 1px solid #dbe9ff;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.trend-chart {
+  width: 100%;
+  height: 260px;
+  display: block;
+}
+
+.trend-chart-bg {
+  fill: #f7fbff;
+}
+
+.trend-axis {
+  stroke: #c1d9fa;
+  stroke-width: 1.2;
+}
+
+.trend-line {
+  fill: none;
+  stroke: #2475d5;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.trend-point {
+  fill: #1f70d1;
+  stroke: white;
+  stroke-width: 1.5;
+}
+
+.chart-empty {
+  color: #5e7da4;
+}
+
+.top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.top-item {
+  border: 1px solid #d9eaff;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) 3fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.top-item span {
+  color: #55779f;
+  font-size: 12px;
+  display: block;
+}
+
+.top-bar-wrap {
+  height: 10px;
+  border-radius: 999px;
+  background: #d7e6fa;
+  overflow: hidden;
+}
+
+.top-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2a9f6c, #2e7cd7);
+}
+
 .map-toolbar {
   display: flex;
   justify-content: space-between;
@@ -284,6 +441,10 @@ button:hover {
   }
 
   .history-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .top-item {
     grid-template-columns: 1fr;
   }
 

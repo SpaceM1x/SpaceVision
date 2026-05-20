@@ -8,11 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from .analytics import build_analytics_summary
 from .auth import create_access_token, decode_token, hash_password, verify_password
 from .database import Base, PREDICTION_DIR, SessionLocal, UPLOAD_DIR, engine, get_db
 from .models import Upload, User
 from .road_inference import run_road_segmentation
-from .schemas import LoginRequest, LoginResponse, UploadOut
+from .schemas import AnalyticsSummaryOut, LoginRequest, LoginResponse, UploadOut
 
 app = FastAPI(title="SpaceVision API")
 
@@ -182,6 +183,13 @@ def list_uploads(current_user: User = Depends(get_current_user), db: Session = D
     del current_user
     items = db.query(Upload).order_by(Upload.created_at.desc()).all()
     return [serialize_upload(item) for item in items]
+
+
+@app.get("/analytics/summary", response_model=AnalyticsSummaryOut)
+def analytics_summary(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    del current_user
+    items = db.query(Upload).order_by(Upload.created_at.desc()).all()
+    return build_analytics_summary(items, PREDICTION_DIR)
 
 
 @app.get("/uploads/{upload_id}/mask")

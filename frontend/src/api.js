@@ -33,4 +33,11 @@ export async function uploadTile(formData, token) {
   return parseResponse(response);
 }
 
+export async function getAnalyticsSummary(token) {
+  const response = await fetch(`${API_URL}/analytics/summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
 export { API_URL };

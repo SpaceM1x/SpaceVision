@@ -9,7 +9,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
-import { API_URL, getUploads, login, uploadTile } from "./api";
+import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
   { key: "maps", label: "Карты", icon: Map },
@@ -21,6 +21,62 @@ const menuItems = [
 
 function formatDate(value) {
   return new Date(value).toLocaleString("ru-RU");
+}
+
+function PieChart({ value, size = 130, color = "#1f70d1", background = "#e8effa", label }) {
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+  const style = {
+    width: `${size}px`,
+    height: `${size}px`,
+    background: `conic-gradient(${color} ${clamped}%, ${background} ${clamped}% 100%)`,
+  };
+  return (
+    <div className="pie-wrapper">
+      <div className="pie-chart" style={style}>
+        <div className="pie-inner">
+          <strong>{clamped.toFixed(1)}%</strong>
+          {label && <span>{label}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrendChart({ points }) {
+  if (!points || points.length === 0) {
+    return <p className="chart-empty">Недостаточно данных для графика.</p>;
+  }
+
+  const maxY = Math.max(...points.map((item) => item.road_percentage), 1);
+  const minY = Math.min(...points.map((item) => item.road_percentage), 0);
+  const rangeY = Math.max(maxY - minY, 1e-6);
+  const width = 680;
+  const height = 240;
+  const pad = 28;
+
+  const mapped = points.map((point, index) => {
+    const x = pad + (index * (width - pad * 2)) / Math.max(points.length - 1, 1);
+    const y = height - pad - ((point.road_percentage - minY) / rangeY) * (height - pad * 2);
+    return { ...point, x, y };
+  });
+  const polyline = mapped.map((item) => `${item.x},${item.y}`).join(" ");
+
+  return (
+    <div className="trend-chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height}`} className="trend-chart" role="img">
+        <rect x="0" y="0" width={width} height={height} className="trend-chart-bg" />
+        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} className="trend-axis" />
+        <line x1={pad} y1={pad} x2={pad} y2={height - pad} className="trend-axis" />
+        <polyline points={polyline} className="trend-line" />
+        {mapped.map((item) => (
+          <g key={item.id}>
+            <circle cx={item.x} cy={item.y} r="4" className="trend-point" />
+            <title>{`${item.title}: ${item.road_percentage.toFixed(2)}%`}</title>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
 }
 
 export default function App() {
@@ -46,6 +102,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [analytics, setAnalytics] = useState(null);
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -89,8 +146,22 @@ export default function App() {
     }
   }
 
+  async function loadAnalytics() {
+    if (!token) {
+      setAnalytics(null);
+      return;
+    }
+    try {
+      const summary = await getAnalyticsSummary(token);
+      setAnalytics(summary);
+    } catch (error) {
+      setStatus(`Не удалось получить аналитику: ${error.message}`);
+    }
+  }
+
   useEffect(() => {
     loadUploads();
+    loadAnalytics();
   }, [token]);
 
   async function handleLogin(event) {
@@ -118,6 +189,7 @@ export default function App() {
     setRole("viewer");
     setUsername("");
     setUploads([]);
+    setAnalytics(null);
     setStatus("");
   }
 
@@ -144,6 +216,7 @@ export default function App() {
       setFile(null);
       setTileForm({ title: "", z: "", x: "", y: "" });
       await loadUploads();
+      await loadAnalytics();
       setActiveTab("history");
     } catch (error) {
       setStatus(`Ошибка загрузки: ${error.message}`);
@@ -151,6 +224,16 @@ export default function App() {
       setIsLoading(false);
     }
   }
+
+  const analyticsItems = analytics?.items ?? [];
+  const timelinePoints = analytics?.timeline ?? [];
+  const topRoadItems = [...analyticsItems]
+    .sort((a, b) => b.road_percentage - a.road_percentage)
+    .slice(0, 5);
+  const averageRoad = analytics?.average_road_percentage ?? 0;
+  const globalCoverage = analytics?.global_road_coverage ?? 0;
+  const maxRoad = analytics?.max_road_percentage ?? 0;
+  const averageComponents = analytics?.average_component_count ?? 0;
 
   if (!token) {
     return (
@@ -285,18 +368,84 @@ export default function App() {
           )}
 
           {activeTab === "statistics" && (
-          <section className="grid">
-            <article className="card">
+          <section className="statistics-layout">
+            <article className="card stats-kpis">
               <h2>Статистика</h2>
-              <ul>
-                <li>Всего загружено снимков: {uploads.length}</li>
-                <li>Активная роль: {role}</li>
-                <li>Текущий пользователь: {username}</li>
-              </ul>
+              <div className="kpi-grid">
+                <div className="kpi-item">
+                  <span>Всего снимков</span>
+                  <strong>{analytics?.total_uploads ?? uploads.length}</strong>
+                </div>
+                <div className="kpi-item">
+                  <span>С масками</span>
+                  <strong>{analytics?.uploads_with_predictions ?? 0}</strong>
+                </div>
+                <div className="kpi-item">
+                  <span>Средний % дорог</span>
+                  <strong>{averageRoad.toFixed(2)}%</strong>
+                </div>
+                <div className="kpi-item">
+                  <span>Макс % дорог</span>
+                  <strong>{maxRoad.toFixed(2)}%</strong>
+                </div>
+                <div className="kpi-item">
+                  <span>Среднее число фрагментов</span>
+                  <strong>{averageComponents.toFixed(1)}</strong>
+                </div>
+                <div className="kpi-item">
+                  <span>Текущий пользователь</span>
+                  <strong>{username}</strong>
+                </div>
+              </div>
             </article>
+
+            <div className="grid">
+              <article className="card">
+                <h2>Доля дорог (по всем пикселям)</h2>
+                <PieChart value={globalCoverage} label="дороги" />
+                <p className="chart-caption">
+                  Глобальное покрытие дорог на всех обработанных снимках.
+                </p>
+              </article>
+              <article className="card">
+                <h2>Средний снимок</h2>
+                <PieChart value={averageRoad} color="#2c9a66" label="дороги" />
+                <p className="chart-caption">
+                  Средняя доля дорожной поверхности на одном загруженном снимке.
+                </p>
+              </article>
+            </div>
+
             <article className="card">
-              <h2>Аналитический модуль</h2>
-              <p>Этот раздел является заготовкой на будущее.</p>
+              <h2>Тренд распознанной дорожной площади</h2>
+              <TrendChart points={timelinePoints} />
+            </article>
+
+            <article className="card">
+              <h2>Топ снимков по доле дорог</h2>
+              {topRoadItems.length === 0 ? (
+                <p className="chart-empty">Пока нет данных для рейтинга.</p>
+              ) : (
+                <div className="top-list">
+                  {topRoadItems.map((item, index) => (
+                    <div className="top-item" key={item.id}>
+                      <div>
+                        <strong>
+                          {index + 1}. {item.title}
+                        </strong>
+                        <span>{formatDate(item.created_at)}</span>
+                      </div>
+                      <div className="top-bar-wrap">
+                        <div
+                          className="top-bar"
+                          style={{ width: `${Math.max(1, Math.min(100, item.road_percentage))}%` }}
+                        />
+                      </div>
+                      <strong>{item.road_percentage.toFixed(2)}%</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
             </article>
           </section>
           )}
