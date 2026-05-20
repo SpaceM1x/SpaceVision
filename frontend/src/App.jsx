@@ -20,7 +20,10 @@ const menuItems = [
 ];
 
 function formatDate(value) {
-  return new Date(value).toLocaleString("ru-RU");
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString("ru-RU");
 }
 
 function PieChart({ value, size = 130, color = "#1f70d1", background = "#e8effa", label }) {
@@ -117,11 +120,13 @@ export default function App() {
     return menuItems;
   }, [isAdmin]);
 
+  const safeUploads = useMemo(() => (Array.isArray(uploads) ? uploads : []), [uploads]);
+
   const filteredUploads = useMemo(() => {
-    return uploads.filter((upload) => {
-      const normalizedTitle = upload.title.toLowerCase();
+    return safeUploads.filter((upload) => {
+      const normalizedTitle = String(upload?.title ?? "").toLowerCase();
       const matchesTitle = normalizedTitle.includes(searchQuery.toLowerCase().trim());
-      const uploadDate = new Date(upload.created_at);
+      const uploadDate = new Date(upload?.created_at ?? 0);
 
       const fromBoundary = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
       const toBoundary = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
@@ -131,7 +136,7 @@ export default function App() {
 
       return matchesTitle && matchesFrom && matchesTo;
     });
-  }, [uploads, searchQuery, dateFrom, dateTo]);
+  }, [safeUploads, searchQuery, dateFrom, dateTo]);
 
   async function loadUploads() {
     if (!token) {
@@ -225,8 +230,12 @@ export default function App() {
     }
   }
 
-  const analyticsItems = analytics?.items ?? [];
-  const timelinePoints = analytics?.timeline ?? [];
+  const analyticsItems = Array.isArray(analytics?.items) ? analytics.items : [];
+  const timelinePoints = Array.isArray(analytics?.timeline) ? analytics.timeline : [];
+  const analyticsByUploadId = useMemo(
+    () => new Map(analyticsItems.map((item) => [item.id, item])),
+    [analyticsItems]
+  );
   const topRoadItems = [...analyticsItems]
     .sort((a, b) => b.road_percentage - a.road_percentage)
     .slice(0, 5);
@@ -520,38 +529,55 @@ export default function App() {
                 {filteredUploads.length === 0 ? (
                   <p>По выбранным фильтрам ничего не найдено.</p>
                 ) : (
-                  filteredUploads.map((upload) => (
-                    <div className="history-item" key={upload.id}>
-                      <strong>{upload.title}</strong>
-                      <span>{formatDate(upload.created_at)}</span>
-                      <span>
-                        tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
-                      </span>
-                      {(upload.mask_url || upload.overlay_url) && (
+                  filteredUploads.map((upload) => {
+                    const analyticsEntry = analyticsByUploadId.get(upload.id);
+                    const roadPercent = analyticsEntry?.road_percentage ?? 0;
+                    const clampedRoadPercent = Math.max(0, Math.min(100, roadPercent));
+                    return (
+                      <div className="history-item" key={upload.id ?? String(upload.title)}>
+                        <strong>{upload.title || "Без названия"}</strong>
+                        <span>{formatDate(upload.created_at)}</span>
                         <span>
-                          {upload.mask_url && (
-                            <a
-                              href={`${API_URL}${upload.mask_url}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Маска дорог
-                            </a>
-                          )}
-                          {upload.mask_url && upload.overlay_url && " · "}
-                          {upload.overlay_url && (
-                            <a
-                              href={`${API_URL}${upload.overlay_url}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Оверлей
-                            </a>
-                          )}
+                          tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
                         </span>
-                      )}
-                    </div>
-                  ))
+                        <div className="history-road-metric">
+                          <div className="history-road-metric-head">
+                            <span>% пикселей дорог</span>
+                            <strong>{clampedRoadPercent.toFixed(2)}%</strong>
+                          </div>
+                          <div className="history-road-bar-wrap">
+                            <div
+                              className="history-road-bar"
+                              style={{ width: `${Math.max(1, clampedRoadPercent)}%` }}
+                            />
+                          </div>
+                        </div>
+                        {(upload.mask_url || upload.overlay_url) && (
+                          <span>
+                            {upload.mask_url && (
+                              <a
+                                href={`${API_URL}${upload.mask_url}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Маска дорог
+                              </a>
+                            )}
+                            {upload.mask_url && upload.overlay_url && " · "}
+                            {upload.overlay_url && (
+                              <a
+                                href={`${API_URL}${upload.overlay_url}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Оверлей
+                              </a>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </section>
