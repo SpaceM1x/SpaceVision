@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 import albumentations as A
 import numpy as np
 from PIL import Image
 import segmentation_models_pytorch as smp
+from segmentation_models_pytorch.losses import DiceLoss, SoftBCEWithLogitsLoss
 import torch
 from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset, random_split
 
 
-EPOCHS = 20
+EPOCHS = 40
 BATCH_SIZE = 4
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 512
@@ -68,7 +70,7 @@ class RoadDataset(Dataset):
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
-    criterion: nn.Module,
+    criterion: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     optimizer: Adam,
     device: torch.device,
 ) -> float:
@@ -97,7 +99,7 @@ def train_one_epoch(
 def validate(
     model: nn.Module,
     loader: DataLoader,
-    criterion: nn.Module,
+    criterion: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     device: torch.device,
 ) -> tuple[float, float]:
     model.eval()
@@ -156,13 +158,19 @@ def main() -> None:
         activation=None,
     ).to(device)
 
+    epochs = EPOCHS
     optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
-    criterion = nn.BCEWithLogitsLoss()
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    dice_loss = DiceLoss(mode="binary")
+    bce_loss = SoftBCEWithLogitsLoss(pos_weight=torch.tensor([3.0], device=device))
+
+    def criterion(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return 0.5 * bce_loss(pred, target) + 0.5 * dice_loss(pred, target)
 
     best_iou = -1.0
     best_model_path = checkpoints_dir / "best_model.pth"
 
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_iou = validate(model, val_loader, criterion, device)
 
@@ -170,10 +178,12 @@ def main() -> None:
             best_iou = val_iou
             torch.save(model.state_dict(), best_model_path)
 
+        current_lr = optimizer.param_groups[0]["lr"]
         print(
-            f"Epoch {epoch}/{EPOCHS} | train_loss: {train_loss:.4f} | "
-            f"val_loss: {val_loss:.4f} | val_iou: {val_iou:.4f}"
+            f"Epoch {epoch}/{epochs} | train_loss: {train_loss:.4f} | "
+            f"val_loss: {val_loss:.4f} | val_iou: {val_iou:.4f} | lr: {current_lr:.6f}"
         )
+        scheduler.step()
 
     print(f"Training done. Best IoU: {best_iou:.4f}")
 
