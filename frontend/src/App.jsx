@@ -245,7 +245,7 @@ export default function App() {
                 />
                 <div className="inputs-row">
                   <input
-                    placeholder="z"
+                    placeholder="z (опционально)"
                     value={tileForm.z}
                     onChange={(event) =>
                       setTileForm((prev) => ({ ...prev, z: event.target.value }))
@@ -253,7 +253,7 @@ export default function App() {
                     disabled={!canUpload}
                   />
                   <input
-                    placeholder="x"
+                    placeholder="x (опционально)"
                     value={tileForm.x}
                     onChange={(event) =>
                       setTileForm((prev) => ({ ...prev, x: event.target.value }))
@@ -261,7 +261,7 @@ export default function App() {
                     disabled={!canUpload}
                   />
                   <input
-                    placeholder="y"
+                    placeholder="y (опционально)"
                     value={tileForm.y}
                     onChange={(event) =>
                       setTileForm((prev) => ({ ...prev, y: event.target.value }))
