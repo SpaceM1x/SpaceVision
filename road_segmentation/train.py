@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import numpy as np
 from PIL import Image
 import segmentation_models_pytorch as smp
@@ -22,36 +23,49 @@ SPLIT_SEED = 42
 
 
 class RoadDataset(Dataset):
-    def __init__(self, images_dir: Path, masks_dir: Path, train: bool) -> None:
+    def __init__(self, images_dir: Path, masks_dir: Path, train: bool, multiplier: int = 1) -> None:
         self.images_dir = images_dir
         self.masks_dir = masks_dir
-        self.file_names = sorted(path.name for path in images_dir.glob("*.png"))
-        self.file_names = [name for name in self.file_names if (masks_dir / name).exists()]
-        if not self.file_names:
+        self.train = train
+        self.multiplier = multiplier
+        self.images = sorted(path.name for path in images_dir.glob("*.png"))
+        self.images = [name for name in self.images if (masks_dir / name).exists()]
+        if not self.images:
             raise ValueError("No matching image/mask PNG pairs found in data directories.")
 
-        transforms = [A.Resize(IMAGE_SIZE, IMAGE_SIZE)]
         if train:
-            transforms.extend(
+            self.transform = A.Compose(
                 [
+                    A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE),
                     A.HorizontalFlip(p=0.5),
                     A.VerticalFlip(p=0.5),
                     A.RandomRotate90(p=0.5),
+                    A.RandomBrightnessContrast(p=0.3),
+                    A.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225],
+                    ),
+                    ToTensorV2(),
                 ]
             )
-        transforms.append(
-            A.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
+        else:
+            self.transform = A.Compose(
+                [
+                    A.CenterCrop(IMAGE_SIZE, IMAGE_SIZE),
+                    A.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225],
+                    ),
+                    ToTensorV2(),
+                ]
             )
-        )
-        self.transform = A.Compose(transforms)
 
     def __len__(self) -> int:
-        return len(self.file_names)
+        return len(self.images) * self.multiplier
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        name = self.file_names[idx]
+        idx = idx % len(self.images)
+        name = self.images[idx]
         image_path = self.images_dir / name
         mask_path = self.masks_dir / name
 
@@ -59,11 +73,11 @@ class RoadDataset(Dataset):
         mask = np.array(Image.open(mask_path).convert("L"))
 
         transformed = self.transform(image=image, mask=mask)
-        image_np = transformed["image"].astype(np.float32)
-        mask_np = transformed["mask"].astype(np.float32) / 255.0
-
-        image_tensor = torch.from_numpy(image_np).permute(2, 0, 1)
-        mask_tensor = torch.from_numpy(mask_np).unsqueeze(0)
+        image_tensor = transformed["image"].float()
+        mask_tensor = transformed["mask"].float()
+        if mask_tensor.ndim == 2:
+            mask_tensor = mask_tensor.unsqueeze(0)
+        mask_tensor = mask_tensor / 255.0
         return image_tensor, mask_tensor
 
 
@@ -141,10 +155,10 @@ def main() -> None:
     generator = torch.Generator().manual_seed(SPLIT_SEED)
     train_subset, val_subset = random_split(full_dataset, [train_size, val_size], generator=generator)
 
-    train_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=True)
-    train_dataset.file_names = [full_dataset.file_names[i] for i in train_subset.indices]
-    val_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=False)
-    val_dataset.file_names = [full_dataset.file_names[i] for i in val_subset.indices]
+    train_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=True, multiplier=8)
+    train_dataset.images = [full_dataset.images[i] for i in train_subset.indices]
+    val_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=False, multiplier=1)
+    val_dataset.images = [full_dataset.images[i] for i in val_subset.indices]
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
