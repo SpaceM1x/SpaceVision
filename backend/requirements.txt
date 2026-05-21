@@ -10,3 +10,4 @@ albumentations
 opencv-python-headless
 numpy
 Pillow
+pyproj

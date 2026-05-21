@@ -8,7 +8,16 @@ import {
   UserCog,
   UserRound,
 } from "lucide-react";
-import { MapContainer, Marker, Popup, Rectangle, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Popup,
+  Rectangle,
+  TileLayer,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
@@ -58,6 +67,16 @@ function getUploadBounds(upload) {
     !Number.isFinite(maxLat) ||
     !Number.isFinite(minLon) ||
     !Number.isFinite(maxLon)
+  ) {
+    return null;
+  }
+  if (
+    minLat < -90 ||
+    maxLat > 90 ||
+    minLon < -180 ||
+    maxLon > 180 ||
+    Math.abs(maxLat - minLat) > 40 ||
+    Math.abs(maxLon - minLon) > 40
   ) {
     return null;
   }
@@ -152,6 +171,7 @@ export default function App() {
   const [isPointRiskLoading, setIsPointRiskLoading] = useState(false);
   const [pointRiskProgress, setPointRiskProgress] = useState(0);
   const [mapFocusBounds, setMapFocusBounds] = useState(null);
+  const [detectedRoadCenter, setDetectedRoadCenter] = useState(null);
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -281,6 +301,7 @@ export default function App() {
   async function handleMapPointSelect(latlng) {
     if (!latlng || !token) return;
     setMapFocusBounds(null);
+    setDetectedRoadCenter(null);
     setSelectedPoint(latlng);
     setIsPointRiskLoading(true);
     setPointRiskProgress(0);
@@ -310,7 +331,8 @@ export default function App() {
     const centerLat = (bounds[0][0] + bounds[1][0]) / 2;
     const centerLon = (bounds[0][1] + bounds[1][1]) / 2;
     setMapFocusBounds(bounds);
-    setSelectedPoint({ lat: centerLat, lng: centerLon });
+    setDetectedRoadCenter({ lat: centerLat, lng: centerLon });
+    setSelectedPoint(null);
     setPointRisk({ fire_probability: MOCK_FIRE_PROBABILITY });
     setIsPointRiskLoading(false);
     setPointRiskProgress(0);
@@ -589,8 +611,10 @@ export default function App() {
                 </div>
               </div>
               <div className="map-point-info">
-                {!selectedPoint && <p>Кликните по карте для расчета вероятности пожара.</p>}
-                {selectedPoint && (
+                {!selectedPoint && !detectedRoadCenter && (
+                  <p>Кликните по карте для расчета вероятности пожара.</p>
+                )}
+                {(selectedPoint || detectedRoadCenter) && (
                   <>
                     {isPointRiskLoading && (
                       <div className="progress-wrap">
@@ -642,6 +666,20 @@ export default function App() {
                       {selectedPoint.lat.toFixed(6)}, {selectedPoint.lng.toFixed(6)}
                     </Popup>
                   </Marker>
+                )}
+                {detectedRoadCenter && (
+                  <CircleMarker
+                    center={[detectedRoadCenter.lat, detectedRoadCenter.lng]}
+                    radius={9}
+                    pathOptions={{
+                      color: "#d81b60",
+                      weight: 3,
+                      fillColor: "#ec407a",
+                      fillOpacity: 0.45,
+                    }}
+                  >
+                    <Popup>Найденный участок дороги (TIFF)</Popup>
+                  </CircleMarker>
                 )}
                 {mapFocusBounds && (
                   <Rectangle

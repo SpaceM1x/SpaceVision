@@ -1,6 +1,7 @@
 import logging
 import math
 import json
+import importlib
 from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -39,16 +40,21 @@ def serialize_upload(upload: Upload) -> UploadOut:
     image_url = f"/uploads/{upload.id}/image" if image_path.exists() else None
     mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
     overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
+    dynamic_bounds = _extract_geotiff_bounds(image_path) if image_path.exists() else None
+    min_lat = dynamic_bounds[0] if dynamic_bounds else upload.min_lat
+    max_lat = dynamic_bounds[1] if dynamic_bounds else upload.max_lat
+    min_lon = dynamic_bounds[2] if dynamic_bounds else upload.min_lon
+    max_lon = dynamic_bounds[3] if dynamic_bounds else upload.max_lon
     return UploadOut(
         id=upload.id,
         title=upload.title,
         tile_z=upload.tile_z,
         tile_x=upload.tile_x,
         tile_y=upload.tile_y,
-        min_lat=upload.min_lat,
-        max_lat=upload.max_lat,
-        min_lon=upload.min_lon,
-        max_lon=upload.max_lon,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lon=min_lon,
+        max_lon=max_lon,
         uploaded_by=upload.uploaded_by,
         created_at=upload.created_at,
         image_url=image_url,
@@ -67,8 +73,11 @@ def _extract_geotiff_bounds(file_path: Path) -> tuple[float, float, float, float
                 return None
             tiepoints = tags.get(33922)
             pixel_scale = tags.get(33550)
+            geokey_directory = tags.get(34735)
             if not tiepoints or not pixel_scale or len(tiepoints) < 6 or len(pixel_scale) < 2:
                 return None
+            tie_i = float(tiepoints[0])
+            tie_j = float(tiepoints[1])
             origin_x = float(tiepoints[3])
             origin_y = float(tiepoints[4])
             scale_x = float(pixel_scale[0])
@@ -76,12 +85,62 @@ def _extract_geotiff_bounds(file_path: Path) -> tuple[float, float, float, float
             if scale_x == 0 or scale_y == 0:
                 return None
             width, height = image.size
-            left = origin_x
-            right = origin_x + width * scale_x
-            top = origin_y
-            bottom = origin_y - height * scale_y
+
+            def pixel_to_model(pixel_i: float, pixel_j: float) -> tuple[float, float]:
+                model_x = origin_x + (pixel_i - tie_i) * scale_x
+                model_y = origin_y + (pixel_j - tie_j) * (-scale_y)
+                return model_x, model_y
+
+            top_left = pixel_to_model(0.0, 0.0)
+            bottom_right = pixel_to_model(float(width), float(height))
+            left, right = sorted((top_left[0], bottom_right[0]))
+            bottom, top = sorted((top_left[1], bottom_right[1]))
+
+            def extract_epsg_code() -> int | None:
+                if not geokey_directory or len(geokey_directory) < 4:
+                    return None
+                key_count = int(geokey_directory[3])
+                expected_length = 4 + key_count * 4
+                if len(geokey_directory) < expected_length:
+                    return None
+                keys = geokey_directory[4:expected_length]
+                projected_epsg = None
+                geographic_epsg = None
+                for idx in range(0, len(keys), 4):
+                    key_id = int(keys[idx])
+                    location = int(keys[idx + 1])
+                    count = int(keys[idx + 2])
+                    value = int(keys[idx + 3])
+                    if location == 0 and count == 1:
+                        if key_id == 3072:  # ProjectedCSTypeGeoKey
+                            projected_epsg = value
+                        if key_id == 2048:  # GeographicTypeGeoKey
+                            geographic_epsg = value
+                return projected_epsg or geographic_epsg
+
+            epsg_code = extract_epsg_code()
+            if epsg_code and epsg_code != 4326:
+                pyproj_module = importlib.util.find_spec("pyproj")
+                if pyproj_module is None:
+                    return None
+                try:
+                    Transformer = importlib.import_module("pyproj").Transformer
+                    transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
+                    left, bottom = transformer.transform(left, bottom)
+                    right, top = transformer.transform(right, top)
+                    left, right = sorted((left, right))
+                    bottom, top = sorted((bottom, top))
+                except Exception:
+                    return None
+
             min_lat, max_lat = sorted((bottom, top))
             min_lon, max_lon = sorted((left, right))
+            if not (-90 <= min_lat <= 90 and -90 <= max_lat <= 90):
+                return None
+            if not (-180 <= min_lon <= 180 and -180 <= max_lon <= 180):
+                return None
+            if (max_lat - min_lat) > 40 or (max_lon - min_lon) > 40:
+                return None
             return min_lat, max_lat, min_lon, max_lon
     except Exception:
         return None
