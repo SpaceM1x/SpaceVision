@@ -243,6 +243,16 @@ export default function App() {
   const globalCoverage = analytics?.global_road_coverage ?? 0;
   const maxRoad = analytics?.max_road_percentage ?? 0;
   const averageComponents = analytics?.average_component_count ?? 0;
+  const uploadsByUser = useMemo(() => {
+    const grouped = new Map();
+    for (const upload of safeUploads) {
+      const userKey = upload?.uploaded_by || "unknown";
+      grouped.set(userKey, (grouped.get(userKey) || 0) + 1);
+    }
+    return Array.from(grouped.entries())
+      .map(([user, count]) => ({ user, count }))
+      .sort((a, b) => b.count - a.count || a.user.localeCompare(b.user));
+  }, [safeUploads]);
 
   if (!token) {
     return (
@@ -630,10 +640,89 @@ export default function App() {
           )}
 
           {activeTab === "admin" && isAdmin && (
-          <section className="card">
-            <h2>Админ-панель</h2>
-            <p>Загружено тайлов в системе: {uploads.length}</p>
-            <p>Этот раздел является заготовкой на будущее.</p>
+          <section className="statistics-layout">
+            <article className="card">
+              <h2>Админ-панель</h2>
+              <div className="kpi-grid">
+                <div className="kpi-item">
+                  <span>Всего снимков</span>
+                  <strong>{safeUploads.length}</strong>
+                </div>
+                <div className="kpi-item">
+                  <span>Пользователей с загрузками</span>
+                  <strong>{uploadsByUser.length}</strong>
+                </div>
+              </div>
+            </article>
+
+            <article className="card">
+              <h2>Загрузки по пользователям</h2>
+              {uploadsByUser.length === 0 ? (
+                <p className="chart-empty">Пока нет данных.</p>
+              ) : (
+                <div className="top-list">
+                  {uploadsByUser.map((entry) => (
+                    <div className="top-item" key={entry.user}>
+                      <div>
+                        <strong>{entry.user}</strong>
+                        <span>Пользователь системы</span>
+                      </div>
+                      <div className="top-bar-wrap">
+                        <div
+                          className="top-bar"
+                          style={{
+                            width: `${Math.max(
+                              5,
+                              (entry.count / Math.max(safeUploads.length, 1)) * 100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <strong>{entry.count}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="card">
+              <h2>Все загруженные снимки</h2>
+              {safeUploads.length === 0 ? (
+                <p className="chart-empty">Пока нет загруженных снимков.</p>
+              ) : (
+                <div className="history">
+                  {safeUploads.map((upload) => (
+                    <div className="history-item" key={`admin-upload-${upload.id}`}>
+                      <strong>{upload.title || "Без названия"}</strong>
+                      <span>Пользователь: {upload.uploaded_by || "unknown"}</span>
+                      <span>{formatDate(upload.created_at)}</span>
+                      <span>
+                        tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
+                      </span>
+                      <span>
+                        {upload.image_url && (
+                          <a href={`${API_URL}${upload.image_url}`} target="_blank" rel="noreferrer">
+                            Оригинал
+                          </a>
+                        )}
+                        {upload.image_url && upload.mask_url && " · "}
+                        {upload.mask_url && (
+                          <a href={`${API_URL}${upload.mask_url}`} target="_blank" rel="noreferrer">
+                            Маска дорог
+                          </a>
+                        )}
+                        {(upload.image_url || upload.mask_url) && upload.overlay_url && " · "}
+                        {upload.overlay_url && (
+                          <a href={`${API_URL}${upload.overlay_url}`} target="_blank" rel="noreferrer">
+                            Оверлей
+                          </a>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
           </section>
           )}
         </main>
