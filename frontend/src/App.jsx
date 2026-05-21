@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import {
   CircleMarker,
+  ImageOverlay,
   MapContainer,
   Marker,
   Popup,
@@ -172,6 +173,7 @@ export default function App() {
   const [pointRiskProgress, setPointRiskProgress] = useState(0);
   const [mapFocusBounds, setMapFocusBounds] = useState(null);
   const [detectedRoadCenter, setDetectedRoadCenter] = useState(null);
+  const [activeMapOverlay, setActiveMapOverlay] = useState(null);
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -260,6 +262,7 @@ export default function App() {
     setUsername("");
     setUploads([]);
     setAnalytics(null);
+    setActiveMapOverlay(null);
   }
 
   async function handleUpload(event) {
@@ -330,8 +333,19 @@ export default function App() {
     if (!bounds) return;
     const centerLat = (bounds[0][0] + bounds[1][0]) / 2;
     const centerLon = (bounds[0][1] + bounds[1][1]) / 2;
+    const overlayPath = upload?.overlay_url ? `${API_URL}${upload.overlay_url}` : null;
     setMapFocusBounds(bounds);
     setDetectedRoadCenter({ lat: centerLat, lng: centerLon });
+    setActiveMapOverlay(
+      overlayPath
+        ? {
+            id: upload.id,
+            title: upload.title || "Без названия",
+            bounds,
+            url: overlayPath,
+          }
+        : null
+    );
     setSelectedPoint(null);
     setPointRisk({ fire_probability: MOCK_FIRE_PROBABILITY });
     setIsPointRiskLoading(false);
@@ -614,6 +628,12 @@ export default function App() {
                 {!selectedPoint && !detectedRoadCenter && (
                   <p>Кликните по карте для расчета вероятности пожара.</p>
                 )}
+                {activeMapOverlay && (
+                  <p>
+                    Оверлей нейросети для снимка <strong>{activeMapOverlay.title}</strong> отображается на
+                    участке TIFF.
+                  </p>
+                )}
                 {(selectedPoint || detectedRoadCenter) && (
                   <>
                     {isPointRiskLoading && (
@@ -658,6 +678,13 @@ export default function App() {
                   url={`${API_URL}/tiles/{z}/{x}/{y}`}
                   opacity={0.75}
                 />
+                {activeMapOverlay && (
+                  <ImageOverlay
+                    bounds={activeMapOverlay.bounds}
+                    url={activeMapOverlay.url}
+                    opacity={0.66}
+                  />
+                )}
                 {selectedPoint && (
                   <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
                     <Popup>
@@ -764,7 +791,7 @@ export default function App() {
                         )}
                         {getUploadBounds(upload) && (
                           <button type="button" onClick={() => handleOpenUploadOnMap(upload)}>
-                            Перейти на карту
+                            Перейти на карту с оверлеем
                           </button>
                         )}
                       </div>
