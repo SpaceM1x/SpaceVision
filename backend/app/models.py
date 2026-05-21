@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -24,5 +24,9 @@ class Upload(Base):
     tile_z: Mapped[int] = mapped_column(Integer, index=True)
     tile_x: Mapped[int] = mapped_column(Integer, index=True)
     tile_y: Mapped[int] = mapped_column(Integer, index=True)
+    min_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    min_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
     uploaded_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

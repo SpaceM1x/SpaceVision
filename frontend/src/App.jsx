@@ -8,7 +8,7 @@ import {
   UserCog,
   UserRound,
 } from "lucide-react";
-import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from "react-leaflet";
+import { MapContainer, Marker, Popup, Rectangle, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
@@ -35,6 +35,36 @@ function MapClickHandler({ onClick }) {
     },
   });
   return null;
+}
+
+function MapViewportController({ focusBounds }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!focusBounds) return;
+    map.fitBounds(focusBounds, { padding: [30, 30] });
+  }, [map, focusBounds]);
+
+  return null;
+}
+
+function getUploadBounds(upload) {
+  const minLat = Number(upload?.min_lat);
+  const maxLat = Number(upload?.max_lat);
+  const minLon = Number(upload?.min_lon);
+  const maxLon = Number(upload?.max_lon);
+  if (
+    !Number.isFinite(minLat) ||
+    !Number.isFinite(maxLat) ||
+    !Number.isFinite(minLon) ||
+    !Number.isFinite(maxLon)
+  ) {
+    return null;
+  }
+  return [
+    [Math.min(minLat, maxLat), Math.min(minLon, maxLon)],
+    [Math.max(minLat, maxLat), Math.max(minLon, maxLon)],
+  ];
 }
 
 function PieChart({ value, size = 130, color = "#3a8d5f", background = "#e1efe4", label }) {
@@ -121,6 +151,7 @@ export default function App() {
   const [pointRisk, setPointRisk] = useState(null);
   const [isPointRiskLoading, setIsPointRiskLoading] = useState(false);
   const [pointRiskProgress, setPointRiskProgress] = useState(0);
+  const [mapFocusBounds, setMapFocusBounds] = useState(null);
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -249,6 +280,7 @@ export default function App() {
 
   async function handleMapPointSelect(latlng) {
     if (!latlng || !token) return;
+    setMapFocusBounds(null);
     setSelectedPoint(latlng);
     setIsPointRiskLoading(true);
     setPointRiskProgress(0);
@@ -270,6 +302,19 @@ export default function App() {
       setIsPointRiskLoading(false);
       window.setTimeout(() => setPointRiskProgress(0), 700);
     }
+  }
+
+  function handleOpenUploadOnMap(upload) {
+    const bounds = getUploadBounds(upload);
+    if (!bounds) return;
+    const centerLat = (bounds[0][0] + bounds[1][0]) / 2;
+    const centerLon = (bounds[0][1] + bounds[1][1]) / 2;
+    setMapFocusBounds(bounds);
+    setSelectedPoint({ lat: centerLat, lng: centerLon });
+    setPointRisk({ fire_probability: MOCK_FIRE_PROBABILITY });
+    setIsPointRiskLoading(false);
+    setPointRiskProgress(0);
+    setActiveTab("maps");
   }
 
   const analyticsItems = Array.isArray(analytics?.items) ? analytics.items : [];
@@ -412,7 +457,7 @@ export default function App() {
                 </div>
                 <input
                   type="file"
-                  accept=".png,.jpg,.jpeg"
+                  accept=".png,.jpg,.jpeg,.tif,.tiff"
                   onChange={(event) => setFile(event.target.files?.[0] || null)}
                   disabled={!canUpload}
                 />
@@ -572,6 +617,7 @@ export default function App() {
               </div>
               <MapContainer center={[52.1, 107.5]} zoom={8} className="map">
                 <MapClickHandler onClick={handleMapPointSelect} />
+                <MapViewportController focusBounds={mapFocusBounds} />
                 {baseLayer === "scheme" ? (
                   <TileLayer
                     attribution='&copy; OpenStreetMap contributors'
@@ -596,6 +642,12 @@ export default function App() {
                       {selectedPoint.lat.toFixed(6)}, {selectedPoint.lng.toFixed(6)}
                     </Popup>
                   </Marker>
+                )}
+                {mapFocusBounds && (
+                  <Rectangle
+                    bounds={mapFocusBounds}
+                    pathOptions={{ color: "#e53935", weight: 2, fillOpacity: 0.06 }}
+                  />
                 )}
               </MapContainer>
             </section>
@@ -671,6 +723,11 @@ export default function App() {
                               </a>
                             )}
                           </span>
+                        )}
+                        {getUploadBounds(upload) && (
+                          <button type="button" onClick={() => handleOpenUploadOnMap(upload)}>
+                            Перейти на карту
+                          </button>
                         )}
                       </div>
                     );
