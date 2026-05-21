@@ -62,3 +62,12 @@ class AnalyticsSummaryOut(BaseModel):
     average_component_count: float
     timeline: list[AnalyticsPointOut]
     items: list[UploadAnalyticsOut]
+
+
+class PointRiskOut(BaseModel):
+    lat: float
+    lon: float
+    road_distance_m: float | None = None
+    settlement_distance_m: float | None = None
+    fire_probability: float
+    risk_level: str

@@ -1,6 +1,11 @@
 import logging
+import math
+import json
 from datetime import datetime
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import quote
+from urllib.request import urlopen
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -13,7 +18,7 @@ from .auth import create_access_token, decode_token, hash_password, verify_passw
 from .database import Base, PREDICTION_DIR, SessionLocal, UPLOAD_DIR, engine, get_db
 from .models import Upload, User
 from .road_inference import run_road_segmentation
-from .schemas import AnalyticsSummaryOut, LoginRequest, LoginResponse, UploadOut
+from .schemas import AnalyticsSummaryOut, LoginRequest, LoginResponse, PointRiskOut, UploadOut
 
 app = FastAPI(title="SpaceVision API")
 
@@ -44,6 +49,79 @@ def serialize_upload(upload: Upload) -> UploadOut:
         mask_url=mask_url,
         overlay_url=overlay_url,
     )
+
+
+def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return radius * c
+
+
+def _nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 20000) -> tuple[float | None, float | None]:
+    query = f"""
+[out:json][timeout:20];
+(
+  way["highway"](around:{radius_m},{lat},{lon});
+  node["place"~"city|town|village|hamlet|isolated_dwelling"](around:{radius_m},{lat},{lon});
+);
+out center;
+"""
+    endpoint = "https://overpass-api.de/api/interpreter?data="
+    request_url = f"{endpoint}{quote(query)}"
+    try:
+        with urlopen(request_url, timeout=25) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (URLError, TimeoutError, ValueError) as error:
+        raise HTTPException(status_code=502, detail=f"Не удалось получить данные OSM: {error}") from error
+
+    road_distances: list[float] = []
+    settlement_distances: list[float] = []
+
+    for element in payload.get("elements", []):
+        element_type = element.get("type")
+        tags = element.get("tags", {})
+        elem_lat = element.get("lat")
+        elem_lon = element.get("lon")
+
+        if element_type == "way":
+            center = element.get("center", {})
+            elem_lat = center.get("lat", elem_lat)
+            elem_lon = center.get("lon", elem_lon)
+
+        if elem_lat is None or elem_lon is None:
+            continue
+
+        distance = haversine_meters(lat, lon, float(elem_lat), float(elem_lon))
+        if "highway" in tags:
+            road_distances.append(distance)
+        if tags.get("place") in {"city", "town", "village", "hamlet", "isolated_dwelling"}:
+            settlement_distances.append(distance)
+
+    road_distance = min(road_distances) if road_distances else None
+    settlement_distance = min(settlement_distances) if settlement_distances else None
+    return road_distance, settlement_distance
+
+
+def _distance_factor(distance_m: float | None, scale_m: float) -> float:
+    if distance_m is None:
+        return 0.0
+    return math.exp(-distance_m / scale_m)
+
+
+def _risk_level_from_probability(probability: float) -> str:
+    if probability >= 70:
+        return "high"
+    if probability >= 40:
+        return "medium"
+    return "low"
 
 
 class IgnoreMissingTileAccessLog(logging.Filter):
@@ -193,6 +271,34 @@ def analytics_summary(current_user: User = Depends(get_current_user), db: Sessio
     del current_user
     items = db.query(Upload).order_by(Upload.created_at.desc()).all()
     return build_analytics_summary(items, PREDICTION_DIR)
+
+
+@app.get("/risk/point", response_model=PointRiskOut)
+def point_risk(
+    lat: float,
+    lon: float,
+    current_user: User = Depends(get_current_user),
+):
+    del current_user
+
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="Некорректные координаты.")
+
+    road_distance, settlement_distance = _nearest_distances_from_osm(lat, lon)
+    road_score = _distance_factor(road_distance, scale_m=2500.0)
+    settlement_score = _distance_factor(settlement_distance, scale_m=5000.0)
+    # Anthropogenic fire ignition proxy: closer to roads/settlements -> higher risk.
+    probability = (0.4 + 0.25 * road_score + 0.35 * settlement_score) * 100.0
+    probability = max(0.0, min(100.0, probability))
+
+    return PointRiskOut(
+        lat=lat,
+        lon=lon,
+        road_distance_m=road_distance,
+        settlement_distance_m=settlement_distance,
+        fire_probability=probability,
+        risk_level=_risk_level_from_probability(probability),
+    )
 
 
 @app.get("/uploads/{upload_id}/mask")

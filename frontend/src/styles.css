@@ -437,6 +437,26 @@ button:hover {
   gap: 10px;
 }
 
+.map-point-info {
+  margin-top: 10px;
+  border: 1px solid #dcefe2;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f7fcf7;
+}
+
+.map-point-info p {
+  margin: 4px 0;
+  color: var(--text-muted);
+}
+
+.point-risk-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
 .layer-switcher {
   background: #edf6ef;
   border: 1px solid #cfe5d5;
