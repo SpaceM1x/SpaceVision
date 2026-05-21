@@ -450,11 +450,60 @@ button:hover {
   color: var(--text-muted);
 }
 
-.point-risk-grid {
+.progress-wrap {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.progress-head strong {
+  color: var(--primary-800);
+}
+
+.progress-track {
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #dcefe2;
+  border: 1px solid #cde4d4;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #84c8a0, #4c9d75);
+  transition: width 0.18s ease;
+}
+
+.fire-risk-single {
   margin-top: 8px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 8px;
+  border: 1px solid #dcefe2;
+  background: #f7fcf7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.fire-risk-single span {
+  color: var(--text-muted);
+}
+
+.fire-risk-single strong {
+  color: var(--primary-800);
+  font-size: 22px;
 }
 
 .layer-switcher {

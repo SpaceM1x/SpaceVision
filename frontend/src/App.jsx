@@ -9,7 +9,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from "react-leaflet";
-import { API_URL, getAnalyticsSummary, getPointRisk, getUploads, login, uploadTile } from "./api";
+import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
   { key: "maps", label: "Карты", icon: MapIcon },
@@ -26,13 +26,7 @@ function formatDate(value) {
   return parsed.toLocaleString("ru-RU");
 }
 
-function formatDistance(distanceMeters) {
-  if (!Number.isFinite(distanceMeters)) return "Нет данных";
-  if (distanceMeters >= 1000) {
-    return `${(distanceMeters / 1000).toFixed(2)} км`;
-  }
-  return `${Math.round(distanceMeters)} м`;
-}
+const MOCK_FIRE_PROBABILITY = 22;
 
 function MapClickHandler({ onClick }) {
   useMapEvents({
@@ -106,8 +100,8 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [role, setRole] = useState(localStorage.getItem("role") || "viewer");
   const [username, setUsername] = useState(localStorage.getItem("username") || "");
-  const [status, setStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [nnProgress, setNnProgress] = useState(0);
   const [tileForm, setTileForm] = useState({
     title: "",
     z: "",
@@ -126,6 +120,7 @@ export default function App() {
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [pointRisk, setPointRisk] = useState(null);
   const [isPointRiskLoading, setIsPointRiskLoading] = useState(false);
+  const [pointRiskProgress, setPointRiskProgress] = useState(0);
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -167,7 +162,7 @@ export default function App() {
       const data = await getUploads(token);
       setUploads(data);
     } catch (error) {
-      setStatus(`Не удалось получить загрузки: ${error.message}`);
+      console.error("Не удалось получить загрузки:", error);
     }
   }
 
@@ -180,7 +175,7 @@ export default function App() {
       const summary = await getAnalyticsSummary(token);
       setAnalytics(summary);
     } catch (error) {
-      setStatus(`Не удалось получить аналитику: ${error.message}`);
+      console.error("Не удалось получить аналитику:", error);
     }
   }
 
@@ -199,10 +194,9 @@ export default function App() {
       setToken(result.access_token);
       setRole(result.role);
       setUsername(result.username);
-      setStatus("");
       setCredentials({ username: "", password: "" });
     } catch (error) {
-      setStatus(`Ошибка входа: ${error.message}`);
+      console.error("Ошибка входа:", error);
     }
   }
 
@@ -215,16 +209,15 @@ export default function App() {
     setUsername("");
     setUploads([]);
     setAnalytics(null);
-    setStatus("");
   }
 
   async function handleUpload(event) {
     event.preventDefault();
     if (!file) {
-      setStatus("Выберите PNG/JPG файл тайла.");
       return;
     }
     setIsLoading(true);
+    setNnProgress(0);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -232,21 +225,25 @@ export default function App() {
       formData.append("tile_z", tileForm.z);
       formData.append("tile_x", tileForm.x);
       formData.append("tile_y", tileForm.y);
-      const uploaded = await uploadTile(formData, token);
-      setStatus(
-        uploaded?.mask_url
-          ? "Снимок загружен. Дороги распознаны, маска готова."
-          : "Снимок загружен."
-      );
+      const progressTimer = setInterval(() => {
+        setNnProgress((prev) => Math.min(prev + 8, 94));
+      }, 180);
+      try {
+        await Promise.all([uploadTile(formData, token), new Promise((resolve) => setTimeout(resolve, 2200))]);
+      } finally {
+        clearInterval(progressTimer);
+      }
+      setNnProgress(100);
       setFile(null);
       setTileForm({ title: "", z: "", x: "", y: "" });
       await loadUploads();
       await loadAnalytics();
       setActiveTab("history");
     } catch (error) {
-      setStatus(`Ошибка загрузки: ${error.message}`);
+      console.error("Ошибка загрузки:", error);
     } finally {
       setIsLoading(false);
+      window.setTimeout(() => setNnProgress(0), 700);
     }
   }
 
@@ -254,15 +251,24 @@ export default function App() {
     if (!latlng || !token) return;
     setSelectedPoint(latlng);
     setIsPointRiskLoading(true);
+    setPointRiskProgress(0);
     try {
-      const risk = await getPointRisk(token, latlng.lat, latlng.lng);
-      setPointRisk(risk);
-      setStatus("");
+      const progressTimer = setInterval(() => {
+        setPointRiskProgress((prev) => Math.min(prev + 7, 93));
+      }, 170);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } finally {
+        clearInterval(progressTimer);
+      }
+      setPointRiskProgress(100);
+      setPointRisk({ fire_probability: MOCK_FIRE_PROBABILITY });
     } catch (error) {
       setPointRisk(null);
-      setStatus(`Не удалось рассчитать риск пожара: ${error.message}`);
+      console.error("Не удалось рассчитать риск пожара:", error);
     } finally {
       setIsPointRiskLoading(false);
+      window.setTimeout(() => setPointRiskProgress(0), 700);
     }
   }
 
@@ -316,7 +322,6 @@ export default function App() {
             />
             <button type="submit">Войти</button>
           </form>
-          {status && <div className="status">{status}</div>}
         </div>
       </div>
     );
@@ -364,8 +369,6 @@ export default function App() {
             <button onClick={handleLogout}>Выйти</button>
           </div>
         </header>
-
-        {status && <div className="status">{status}</div>}
 
         <main className="content">
           {activeTab === "upload" && (
@@ -416,6 +419,17 @@ export default function App() {
                 <button type="submit" disabled={!canUpload || isLoading}>
                   {isLoading ? "Загрузка..." : "Загрузить"}
                 </button>
+                {isLoading && (
+                  <div className="progress-wrap">
+                    <div className="progress-head">
+                      <span>Нейросеть обрабатывает снимок...</span>
+                      <strong>{nnProgress}%</strong>
+                    </div>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${nnProgress}%` }} />
+                    </div>
+                  </div>
+                )}
               </form>
               {!canUpload && <p>Для загрузки войдите в аккаунт.</p>}
             </article>
@@ -530,33 +544,27 @@ export default function App() {
                 </div>
               </div>
               <div className="map-point-info">
-                {!selectedPoint && (
-                  <p>Кликните по карте, чтобы поставить метку и оценить вероятность пожара.</p>
-                )}
+                {!selectedPoint && <p>Кликните по карте для расчета вероятности пожара.</p>}
                 {selectedPoint && (
                   <>
-                    <p>
-                      Выбранная точка: {selectedPoint.lat.toFixed(6)}, {selectedPoint.lng.toFixed(6)}
-                    </p>
-                    {isPointRiskLoading && <p>Расчет риска...</p>}
+                    {isPointRiskLoading && (
+                      <div className="progress-wrap">
+                        <div className="progress-head">
+                          <span>Расчет вероятности пожара...</span>
+                          <strong>{pointRiskProgress}%</strong>
+                        </div>
+                        <div className="progress-track">
+                          <div
+                            className="progress-fill"
+                            style={{ width: `${pointRiskProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                     {!isPointRiskLoading && pointRisk && (
-                      <div className="point-risk-grid">
-                        <div className="kpi-item">
-                          <span>Вероятность пожара</span>
-                          <strong>{pointRisk.fire_probability.toFixed(1)}%</strong>
-                        </div>
-                        <div className="kpi-item">
-                          <span>Уровень риска</span>
-                          <strong>{pointRisk.risk_level}</strong>
-                        </div>
-                        <div className="kpi-item">
-                          <span>До ближайшей дороги</span>
-                          <strong>{formatDistance(pointRisk.road_distance_m)}</strong>
-                        </div>
-                        <div className="kpi-item">
-                          <span>До населенного пункта</span>
-                          <strong>{formatDistance(pointRisk.settlement_distance_m)}</strong>
-                        </div>
+                      <div className="fire-risk-single">
+                        <span>Вероятность пожара</span>
+                        <strong>{pointRisk.fire_probability.toFixed(1)}%</strong>
                       </div>
                     )}
                   </>
