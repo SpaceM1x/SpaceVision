@@ -22,18 +22,18 @@ class AppErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 24, fontFamily: "Inter, Segoe UI, Arial, sans-serif" }}>
-          <h2 style={{ color: "#155da8", marginBottom: 10 }}>Ошибка интерфейса</h2>
-          <p style={{ color: "#365a84" }}>
+          <h2 style={{ color: "#1f5b3a", marginBottom: 10 }}>Ошибка интерфейса</h2>
+          <p style={{ color: "#496a59" }}>
             Произошла ошибка рендера. Обновите страницу или перезапустите frontend.
           </p>
           <pre
             style={{
-              background: "#f7fbff",
-              border: "1px solid #d5e7ff",
+              background: "#f6fbf6",
+              border: "1px solid #cde6d4",
               borderRadius: 8,
               padding: 12,
               overflowX: "auto",
-              color: "#28486c",
+              color: "#2d4d3b",
             }}
           >
             {this.state.message}

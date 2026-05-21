@@ -1,7 +1,20 @@
 :root {
   font-family: "Inter", "Segoe UI", Arial, sans-serif;
-  color: #12325a;
-  background: #f3f8ff;
+  color: #1f3b2d;
+  background: #eef6ee;
+  --bg-page: #eef6ee;
+  --bg-soft: #f6fbf6;
+  --card-bg: #ffffff;
+  --text-main: #1f3b2d;
+  --text-muted: #5c7868;
+  --primary-900: #1e5a39;
+  --primary-800: #246844;
+  --primary-700: #2f7950;
+  --primary-600: #3a8d5f;
+  --primary-500: #4fa66f;
+  --primary-300: #a7d7b4;
+  --primary-200: #cce9d3;
+  --primary-100: #e8f4eb;
 }
 
 * {
@@ -10,7 +23,7 @@
 
 body {
   margin: 0;
-  background: #eaf1fb;
+  background: var(--bg-page);
 }
 
 .auth-page {
@@ -22,11 +35,11 @@ body {
 
 .auth-card {
   width: min(420px, 100%);
-  background: #ffffff;
-  border: 1px solid #cee1ff;
+  background: var(--card-bg);
+  border: 1px solid var(--primary-200);
   border-radius: 14px;
   padding: 24px;
-  box-shadow: 0 12px 30px rgba(30, 87, 168, 0.12);
+  box-shadow: 0 12px 30px rgba(39, 98, 62, 0.12);
 }
 
 .auth-subtitle {
@@ -46,8 +59,8 @@ body {
 }
 
 .sidebar {
-  background: linear-gradient(180deg, #0a77bc 0%, #0e7fc7 100%);
-  color: #e9f6ff;
+  background: linear-gradient(180deg, #1f5f3e 0%, #2f7a4f 100%);
+  color: #eaf7ee;
   padding: 18px 0;
   display: flex;
   flex-direction: column;
@@ -118,17 +131,18 @@ body {
 
 .workspace {
   padding: 20px;
+  background: var(--bg-soft);
 }
 
 h1 {
   margin: 0;
-  color: #104a8e;
+  color: var(--primary-900);
   font-size: 22px;
 }
 
 h2 {
   margin-top: 0;
-  color: #155da8;
+  color: var(--primary-900);
 }
 
 .topbar {
@@ -148,29 +162,30 @@ h2 {
 input,
 button {
   border-radius: 8px;
-  border: 1px solid #bfd8fb;
+  border: 1px solid var(--primary-200);
   padding: 9px 11px;
   background: #ffffff;
-  color: #12325a;
+  color: var(--text-main);
 }
 
 button {
-  background: #1f70d1;
-  border-color: #1f70d1;
+  background: var(--primary-700);
+  border-color: var(--primary-700);
   color: #ffffff;
   cursor: pointer;
 }
 
 button:hover {
-  background: #1b63bb;
+  background: var(--primary-800);
 }
 
 .status {
   margin-bottom: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #deecff;
-  border: 1px solid #bed8fe;
+  background: var(--primary-100);
+  border: 1px solid var(--primary-300);
+  color: var(--primary-900);
 }
 
 .content {
@@ -186,11 +201,11 @@ button:hover {
 }
 
 .card {
-  background: #ffffff;
+  background: var(--card-bg);
   border-radius: 12px;
-  border: 1px solid #cee1ff;
+  border: 1px solid var(--primary-200);
   padding: 18px;
-  box-shadow: 0 8px 20px rgba(30, 87, 168, 0.07);
+  box-shadow: 0 8px 20px rgba(39, 98, 62, 0.08);
 }
 
 .upload-form,
@@ -216,15 +231,15 @@ button:hover {
 .history-item {
   padding: 10px;
   border-radius: 8px;
-  border: 1px solid #e3eeff;
-  background: #f7fbff;
+  border: 1px solid #deecdf;
+  background: #f7fcf7;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .history-item a {
-  color: #1a67c4;
+  color: var(--primary-700);
   text-decoration: none;
   font-weight: 600;
 }
@@ -248,24 +263,24 @@ button:hover {
 }
 
 .history-road-metric-head span {
-  color: #5a7ba3;
+  color: var(--text-muted);
 }
 
 .history-road-metric-head strong {
-  color: #1c5fae;
+  color: var(--primary-800);
 }
 
 .history-road-bar-wrap {
   height: 9px;
   border-radius: 999px;
-  background: #dce9fb;
+  background: #dcefe2;
   overflow: hidden;
 }
 
 .history-road-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #36a770, #2674d0);
+  background: linear-gradient(90deg, #5fb87b, #2f7950);
 }
 
 .statistics-layout {
@@ -281,8 +296,8 @@ button:hover {
 }
 
 .kpi-item {
-  border: 1px solid #d8e9ff;
-  background: #f7fbff;
+  border: 1px solid #dcefe2;
+  background: #f7fcf7;
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
@@ -291,12 +306,12 @@ button:hover {
 }
 
 .kpi-item span {
-  color: #5074a7;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
 .kpi-item strong {
-  color: #0f4f99;
+  color: var(--primary-800);
   font-size: 19px;
 }
 
@@ -316,7 +331,7 @@ button:hover {
   height: 70%;
   border-radius: 50%;
   background: white;
-  border: 1px solid #d7e8ff;
+  border: 1px solid #dcefe2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -326,22 +341,22 @@ button:hover {
 }
 
 .pie-inner strong {
-  color: #0d4a8f;
+  color: var(--primary-900);
   font-size: 18px;
 }
 
 .pie-inner span {
-  color: #5a7da9;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .chart-caption {
   margin-top: 10px;
-  color: #5a79a0;
+  color: var(--text-muted);
 }
 
 .trend-chart-wrap {
-  border: 1px solid #dbe9ff;
+  border: 1px solid #dcefe2;
   border-radius: 10px;
   overflow: hidden;
 }
@@ -353,30 +368,30 @@ button:hover {
 }
 
 .trend-chart-bg {
-  fill: #f7fbff;
+  fill: #f7fcf7;
 }
 
 .trend-axis {
-  stroke: #c1d9fa;
+  stroke: #c9e2cf;
   stroke-width: 1.2;
 }
 
 .trend-line {
   fill: none;
-  stroke: #2475d5;
+  stroke: #2f7950;
   stroke-width: 3;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
 .trend-point {
-  fill: #1f70d1;
+  fill: #3a8d5f;
   stroke: white;
   stroke-width: 1.5;
 }
 
 .chart-empty {
-  color: #5e7da4;
+  color: var(--text-muted);
 }
 
 .top-list {
@@ -386,9 +401,9 @@ button:hover {
 }
 
 .top-item {
-  border: 1px solid #d9eaff;
+  border: 1px solid #dcefe2;
   border-radius: 10px;
-  background: #f8fbff;
+  background: #f7fcf7;
   padding: 10px 12px;
   display: grid;
   grid-template-columns: minmax(220px, 2fr) 3fr auto;
@@ -397,7 +412,7 @@ button:hover {
 }
 
 .top-item span {
-  color: #55779f;
+  color: var(--text-muted);
   font-size: 12px;
   display: block;
 }
@@ -405,14 +420,14 @@ button:hover {
 .top-bar-wrap {
   height: 10px;
   border-radius: 999px;
-  background: #d7e6fa;
+  background: #dcefe2;
   overflow: hidden;
 }
 
 .top-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2a9f6c, #2e7cd7);
+  background: linear-gradient(90deg, #5fb87b, #2f7950);
 }
 
 .map-toolbar {
@@ -423,8 +438,8 @@ button:hover {
 }
 
 .layer-switcher {
-  background: #edf5ff;
-  border: 1px solid #cfe2ff;
+  background: #edf6ef;
+  border: 1px solid #cfe5d5;
   border-radius: 8px;
   padding: 4px;
   display: flex;
@@ -434,12 +449,12 @@ button:hover {
 .layer-btn {
   background: transparent;
   border-color: transparent;
-  color: #1d5fa7;
+  color: var(--primary-800);
   min-width: 88px;
 }
 
 .layer-btn.active {
-  background: #1f70d1;
+  background: var(--primary-700);
   color: #ffffff;
 }
 
@@ -452,8 +467,8 @@ button:hover {
 }
 
 .user-badge {
-  background: #eef5ff;
-  border: 1px solid #cde0ff;
+  background: #eef8f1;
+  border: 1px solid #cfe5d5;
   padding: 7px 10px;
   border-radius: 8px;
 }
