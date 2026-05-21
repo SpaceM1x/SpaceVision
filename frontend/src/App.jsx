@@ -26,7 +26,7 @@ function formatDate(value) {
   return parsed.toLocaleString("ru-RU");
 }
 
-function PieChart({ value, size = 130, color = "#1f70d1", background = "#e8effa", label }) {
+function PieChart({ value, size = 130, color = "#3a8d5f", background = "#e1efe4", label }) {
   const clamped = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
   const style = {
     width: `${size}px`,
