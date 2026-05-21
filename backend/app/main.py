@@ -11,6 +11,8 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from PIL import Image
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .analytics import build_analytics_summary
@@ -43,12 +45,62 @@ def serialize_upload(upload: Upload) -> UploadOut:
         tile_z=upload.tile_z,
         tile_x=upload.tile_x,
         tile_y=upload.tile_y,
+        min_lat=upload.min_lat,
+        max_lat=upload.max_lat,
+        min_lon=upload.min_lon,
+        max_lon=upload.max_lon,
         uploaded_by=upload.uploaded_by,
         created_at=upload.created_at,
         image_url=image_url,
         mask_url=mask_url,
         overlay_url=overlay_url,
     )
+
+
+def _extract_geotiff_bounds(file_path: Path) -> tuple[float, float, float, float] | None:
+    if file_path.suffix.lower() not in {".tif", ".tiff"}:
+        return None
+    try:
+        with Image.open(file_path) as image:
+            tags = getattr(image, "tag_v2", None)
+            if tags is None:
+                return None
+            tiepoints = tags.get(33922)
+            pixel_scale = tags.get(33550)
+            if not tiepoints or not pixel_scale or len(tiepoints) < 6 or len(pixel_scale) < 2:
+                return None
+            origin_x = float(tiepoints[3])
+            origin_y = float(tiepoints[4])
+            scale_x = float(pixel_scale[0])
+            scale_y = float(pixel_scale[1])
+            if scale_x == 0 or scale_y == 0:
+                return None
+            width, height = image.size
+            left = origin_x
+            right = origin_x + width * scale_x
+            top = origin_y
+            bottom = origin_y - height * scale_y
+            min_lat, max_lat = sorted((bottom, top))
+            min_lon, max_lon = sorted((left, right))
+            return min_lat, max_lat, min_lon, max_lon
+    except Exception:
+        return None
+
+
+def _ensure_upload_geo_columns():
+    with engine.begin() as connection:
+        existing_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(uploads)")).fetchall()
+        }
+        alter_queries = {
+            "min_lat": "ALTER TABLE uploads ADD COLUMN min_lat FLOAT",
+            "max_lat": "ALTER TABLE uploads ADD COLUMN max_lat FLOAT",
+            "min_lon": "ALTER TABLE uploads ADD COLUMN min_lon FLOAT",
+            "max_lon": "ALTER TABLE uploads ADD COLUMN max_lon FLOAT",
+        }
+        for column_name, query in alter_queries.items():
+            if column_name not in existing_columns:
+                connection.execute(text(query))
 
 
 def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -164,6 +216,7 @@ app.add_middleware(
 def on_startup():
     configure_access_logging()
     Base.metadata.create_all(bind=engine)
+    _ensure_upload_geo_columns()
     ensure_default_users()
 
 
@@ -245,12 +298,13 @@ async def create_upload(
     parsed_tile_y = parse_tile_value(tile_y, "tile_y")
 
     extension = Path(file.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg"}:
-        raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG.")
+    if extension not in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+        raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG/TIFF.")
     filename = f"{uuid4().hex}{extension}"
     destination = UPLOAD_DIR / filename
     content = await file.read()
     destination.write_bytes(content)
+    geotiff_bounds = _extract_geotiff_bounds(destination)
     try:
         run_road_segmentation(destination, PREDICTION_DIR)
     except Exception as error:
@@ -264,6 +318,10 @@ async def create_upload(
         tile_z=parsed_tile_z,
         tile_x=parsed_tile_x,
         tile_y=parsed_tile_y,
+        min_lat=geotiff_bounds[0] if geotiff_bounds else None,
+        max_lat=geotiff_bounds[1] if geotiff_bounds else None,
+        min_lon=geotiff_bounds[2] if geotiff_bounds else None,
+        max_lon=geotiff_bounds[3] if geotiff_bounds else None,
         uploaded_by=current_user.username,
     )
     db.add(upload)

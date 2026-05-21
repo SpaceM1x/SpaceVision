@@ -20,6 +20,10 @@ class UploadOut(BaseModel):
     tile_z: int
     tile_x: int
     tile_y: int
+    min_lat: float | None = None
+    max_lat: float | None = None
+    min_lon: float | None = None
+    max_lon: float | None = None
     uploaded_by: str
     created_at: datetime
     image_url: str | None = None
