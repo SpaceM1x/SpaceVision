@@ -1,20 +1,20 @@
 :root {
   font-family: "Inter", "Segoe UI", Arial, sans-serif;
-  color: #1f3b2d;
-  background: #eef6ee;
-  --bg-page: #eef6ee;
-  --bg-soft: #f6fbf6;
+  color: #264536;
+  background: #f4faf4;
+  --bg-page: #f4faf4;
+  --bg-soft: #fbfefb;
   --card-bg: #ffffff;
-  --text-main: #1f3b2d;
-  --text-muted: #5c7868;
-  --primary-900: #1e5a39;
-  --primary-800: #246844;
-  --primary-700: #2f7950;
-  --primary-600: #3a8d5f;
-  --primary-500: #4fa66f;
-  --primary-300: #a7d7b4;
-  --primary-200: #cce9d3;
-  --primary-100: #e8f4eb;
+  --text-main: #264536;
+  --text-muted: #6f8d7d;
+  --primary-900: #2c6a48;
+  --primary-800: #377958;
+  --primary-700: #458969;
+  --primary-600: #5aa07c;
+  --primary-500: #74ba93;
+  --primary-300: #bce2c9;
+  --primary-200: #d9efdf;
+  --primary-100: #eff8f1;
 }
 
 * {
@@ -59,7 +59,7 @@ body {
 }
 
 .sidebar {
-  background: linear-gradient(180deg, #1f5f3e 0%, #2f7a4f 100%);
+  background: linear-gradient(180deg, #3d8a64 0%, #4f9d76 100%);
   color: #eaf7ee;
   padding: 18px 0;
   display: flex;
@@ -113,7 +113,7 @@ body {
 }
 
 .menu-item.active {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .menu-left {
@@ -176,7 +176,7 @@ button {
 }
 
 button:hover {
-  background: var(--primary-800);
+  background: var(--primary-600);
 }
 
 .status {
@@ -280,7 +280,7 @@ button:hover {
 .history-road-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #5fb87b, #2f7950);
+  background: linear-gradient(90deg, #87c9a2, #4f9d76);
 }
 
 .statistics-layout {
@@ -427,7 +427,7 @@ button:hover {
 .top-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #5fb87b, #2f7950);
+  background: linear-gradient(90deg, #8ccda7, #56a57e);
 }
 
 .map-toolbar {
