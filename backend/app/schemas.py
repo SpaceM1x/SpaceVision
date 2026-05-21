@@ -22,6 +22,7 @@ class UploadOut(BaseModel):
     tile_y: int
     uploaded_by: str
     created_at: datetime
+    image_url: str | None = None
     mask_url: str | None = None
     overlay_url: str | None = None
 

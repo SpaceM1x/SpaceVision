@@ -28,6 +28,8 @@ def _prediction_paths(upload: Upload) -> tuple[Path, Path]:
 
 def serialize_upload(upload: Upload) -> UploadOut:
     mask_path, overlay_path = _prediction_paths(upload)
+    image_path = Path(upload.file_path)
+    image_url = f"/uploads/{upload.id}/image" if image_path.exists() else None
     mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
     overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
     return UploadOut(
@@ -38,6 +40,7 @@ def serialize_upload(upload: Upload) -> UploadOut:
         tile_y=upload.tile_y,
         uploaded_by=upload.uploaded_by,
         created_at=upload.created_at,
+        image_url=image_url,
         mask_url=mask_url,
         overlay_url=overlay_url,
     )
@@ -201,6 +204,17 @@ def get_upload_mask(upload_id: int, db: Session = Depends(get_db)):
     if not mask_path.exists():
         raise HTTPException(status_code=404, detail="Mask not found")
     return FileResponse(mask_path)
+
+
+@app.get("/uploads/{upload_id}/image")
+def get_upload_image(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    image_path = Path(upload.file_path)
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(image_path)
 
 
 @app.get("/uploads/{upload_id}/overlay")
