@@ -40,4 +40,14 @@ export async function getAnalyticsSummary(token) {
   return parseResponse(response);
 }
 
+export async function getPointRisk(token, lat, lon) {
+  const response = await fetch(
+    `${API_URL}/risk/point?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  return parseResponse(response);
+}
+
 export { API_URL };

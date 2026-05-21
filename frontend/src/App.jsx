@@ -8,8 +8,8 @@ import {
   UserCog,
   UserRound,
 } from "lucide-react";
-import { MapContainer, TileLayer } from "react-leaflet";
-import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
+import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from "react-leaflet";
+import { API_URL, getAnalyticsSummary, getPointRisk, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
   { key: "maps", label: "Карты", icon: MapIcon },
@@ -24,6 +24,23 @@ function formatDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "—";
   return parsed.toLocaleString("ru-RU");
+}
+
+function formatDistance(distanceMeters) {
+  if (!Number.isFinite(distanceMeters)) return "Нет данных";
+  if (distanceMeters >= 1000) {
+    return `${(distanceMeters / 1000).toFixed(2)} км`;
+  }
+  return `${Math.round(distanceMeters)} м`;
+}
+
+function MapClickHandler({ onClick }) {
+  useMapEvents({
+    click(event) {
+      onClick(event.latlng);
+    },
+  });
+  return null;
 }
 
 function PieChart({ value, size = 130, color = "#3a8d5f", background = "#e1efe4", label }) {
@@ -106,6 +123,9 @@ export default function App() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [analytics, setAnalytics] = useState(null);
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [pointRisk, setPointRisk] = useState(null);
+  const [isPointRiskLoading, setIsPointRiskLoading] = useState(false);
 
   const canUpload = Boolean(token);
   const isAdmin = role === "admin";
@@ -227,6 +247,22 @@ export default function App() {
       setStatus(`Ошибка загрузки: ${error.message}`);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleMapPointSelect(latlng) {
+    if (!latlng || !token) return;
+    setSelectedPoint(latlng);
+    setIsPointRiskLoading(true);
+    try {
+      const risk = await getPointRisk(token, latlng.lat, latlng.lng);
+      setPointRisk(risk);
+      setStatus("");
+    } catch (error) {
+      setPointRisk(null);
+      setStatus(`Не удалось рассчитать риск пожара: ${error.message}`);
+    } finally {
+      setIsPointRiskLoading(false);
     }
   }
 
@@ -493,7 +529,41 @@ export default function App() {
                   </button>
                 </div>
               </div>
+              <div className="map-point-info">
+                {!selectedPoint && (
+                  <p>Кликните по карте, чтобы поставить метку и оценить вероятность пожара.</p>
+                )}
+                {selectedPoint && (
+                  <>
+                    <p>
+                      Выбранная точка: {selectedPoint.lat.toFixed(6)}, {selectedPoint.lng.toFixed(6)}
+                    </p>
+                    {isPointRiskLoading && <p>Расчет риска...</p>}
+                    {!isPointRiskLoading && pointRisk && (
+                      <div className="point-risk-grid">
+                        <div className="kpi-item">
+                          <span>Вероятность пожара</span>
+                          <strong>{pointRisk.fire_probability.toFixed(1)}%</strong>
+                        </div>
+                        <div className="kpi-item">
+                          <span>Уровень риска</span>
+                          <strong>{pointRisk.risk_level}</strong>
+                        </div>
+                        <div className="kpi-item">
+                          <span>До ближайшей дороги</span>
+                          <strong>{formatDistance(pointRisk.road_distance_m)}</strong>
+                        </div>
+                        <div className="kpi-item">
+                          <span>До населенного пункта</span>
+                          <strong>{formatDistance(pointRisk.settlement_distance_m)}</strong>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
               <MapContainer center={[52.1, 107.5]} zoom={8} className="map">
+                <MapClickHandler onClick={handleMapPointSelect} />
                 {baseLayer === "scheme" ? (
                   <TileLayer
                     attribution='&copy; OpenStreetMap contributors'
@@ -510,6 +580,15 @@ export default function App() {
                   url={`${API_URL}/tiles/{z}/{x}/{y}`}
                   opacity={0.75}
                 />
+                {selectedPoint && (
+                  <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
+                    <Popup>
+                      Точка риска пожара
+                      <br />
+                      {selectedPoint.lat.toFixed(6)}, {selectedPoint.lng.toFixed(6)}
+                    </Popup>
+                  </Marker>
+                )}
               </MapContainer>
             </section>
           )}
