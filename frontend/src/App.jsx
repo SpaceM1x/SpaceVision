@@ -586,9 +586,46 @@ export default function App() {
           {activeTab === "profile" && (
           <section className="card">
             <h2>Личный кабинет</h2>
-            <p>Имя: {username || "Гость"}</p>
-            <p>Роль: {role}</p>
-            <p>Загружено снимков: {uploads.length}</p>
+            <div className="kpi-grid">
+              <div className="kpi-item">
+                <span>Имя</span>
+                <strong>{username || "Гость"}</strong>
+              </div>
+              <div className="kpi-item">
+                <span>Роль</span>
+                <strong>{role}</strong>
+              </div>
+              <div className="kpi-item">
+                <span>Загружено снимков</span>
+                <strong>{analytics?.total_uploads ?? uploads.length}</strong>
+              </div>
+              <div className="kpi-item">
+                <span>Снимков с масками</span>
+                <strong>{analytics?.uploads_with_predictions ?? 0}</strong>
+              </div>
+            </div>
+            <div className="grid" style={{ marginTop: "12px" }}>
+              <article className="card">
+                <h2>Последняя загрузка</h2>
+                {uploads[0] ? (
+                  <>
+                    <p>
+                      <strong>{uploads[0].title || "Без названия"}</strong>
+                    </p>
+                    <p>{formatDate(uploads[0].created_at)}</p>
+                    {uploads[0].mask_url && (
+                      <p>
+                        <a href={`${API_URL}${uploads[0].mask_url}`} target="_blank" rel="noreferrer">
+                          Открыть маску дорог
+                        </a>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p>Пока нет загрузок.</p>
+                )}
+              </article>
+            </div>
           </section>
           )}
 
