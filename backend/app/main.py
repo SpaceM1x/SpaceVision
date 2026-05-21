@@ -3,9 +3,9 @@ import math
 import json
 from datetime import datetime
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -74,18 +74,28 @@ def _nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 20000) -
 );
 out center;
 """
-    endpoint = "https://overpass-api.de/api/interpreter?data="
-    request_url = f"{endpoint}{quote(query)}"
+    endpoint = "https://overpass-api.de/api/interpreter"
+    payload = f"data={quote(query)}".encode("utf-8")
+    request = Request(
+        endpoint,
+        data=payload,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "User-Agent": "SpaceVision/1.0 (local fire risk prototype)",
+            "Accept": "application/json",
+        },
+    )
     try:
-        with urlopen(request_url, timeout=25) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (URLError, TimeoutError, ValueError) as error:
-        raise HTTPException(status_code=502, detail=f"Не удалось получить данные OSM: {error}") from error
+        with urlopen(request, timeout=25) as response:
+            payload_json = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        # Keep algorithm available even when external OSM service is unreachable.
+        return None, None
 
     road_distances: list[float] = []
     settlement_distances: list[float] = []
 
-    for element in payload.get("elements", []):
+    for element in payload_json.get("elements", []):
         element_type = element.get("type")
         tags = element.get("tags", {})
         elem_lat = element.get("lat")
@@ -110,10 +120,13 @@ out center;
     return road_distance, settlement_distance
 
 
-def _distance_factor(distance_m: float | None, scale_m: float) -> float:
+def _distance_to_score(distance_m: float | None, thresholds: list[tuple[float, float]], missing_score: float) -> float:
     if distance_m is None:
-        return 0.0
-    return math.exp(-distance_m / scale_m)
+        return missing_score
+    for max_distance, score in thresholds:
+        if distance_m <= max_distance:
+            return score
+    return 0.0
 
 
 def _risk_level_from_probability(probability: float) -> str:
@@ -285,10 +298,33 @@ def point_risk(
         raise HTTPException(status_code=400, detail="Некорректные координаты.")
 
     road_distance, settlement_distance = _nearest_distances_from_osm(lat, lon)
-    road_score = _distance_factor(road_distance, scale_m=2500.0)
-    settlement_score = _distance_factor(settlement_distance, scale_m=5000.0)
-    # Anthropogenic fire ignition proxy: closer to roads/settlements -> higher risk.
-    probability = (0.4 + 0.25 * road_score + 0.35 * settlement_score) * 100.0
+
+    # Rule-based score (no neural network): the closer to roads/settlements, the higher ignition risk.
+    road_score = _distance_to_score(
+        road_distance,
+        thresholds=[
+            (200.0, 35.0),
+            (500.0, 28.0),
+            (1000.0, 20.0),
+            (3000.0, 12.0),
+            (7000.0, 6.0),
+        ],
+        missing_score=2.0,
+    )
+    settlement_score = _distance_to_score(
+        settlement_distance,
+        thresholds=[
+            (500.0, 35.0),
+            (1500.0, 28.0),
+            (4000.0, 20.0),
+            (10000.0, 12.0),
+            (20000.0, 6.0),
+        ],
+        missing_score=2.0,
+    )
+
+    natural_background_score = 18.0
+    probability = natural_background_score + road_score + settlement_score
     probability = max(0.0, min(100.0, probability))
 
     return PointRiskOut(
