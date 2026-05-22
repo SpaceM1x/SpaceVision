@@ -8,15 +8,28 @@ async function parseResponse(response) {
   return response.json();
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function getUploads(token) {
-  const response = await fetch(`${API_URL}/uploads`, {
+  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseResponse(response);
 }
 
 export async function login(username, password) {
-  const response = await fetch(`${API_URL}/auth/login`, {
+  const response = await fetchWithTimeout(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -25,7 +38,7 @@ export async function login(username, password) {
 }
 
 export async function uploadTile(formData, token) {
-  const response = await fetch(`${API_URL}/uploads`, {
+  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: formData,
@@ -34,18 +47,19 @@ export async function uploadTile(formData, token) {
 }
 
 export async function getAnalyticsSummary(token) {
-  const response = await fetch(`${API_URL}/analytics/summary`, {
+  const response = await fetchWithTimeout(`${API_URL}/analytics/summary`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseResponse(response);
 }
 
 export async function getPointRisk(token, lat, lon) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${API_URL}/risk/point?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
-    }
+    },
+    9000
   );
   return parseResponse(response);
 }
