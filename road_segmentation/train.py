@@ -15,8 +15,8 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset, random_split
 
 
-EPOCHS = 40
-BATCH_SIZE = 4
+EPOCHS = 50
+BATCH_SIZE = 8
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 512
 SPLIT_SEED = 42
@@ -155,7 +155,7 @@ def main() -> None:
     generator = torch.Generator().manual_seed(SPLIT_SEED)
     train_subset, val_subset = random_split(full_dataset, [train_size, val_size], generator=generator)
 
-    train_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=True, multiplier=8)
+    train_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=True, multiplier=4)
     train_dataset.images = [full_dataset.images[i] for i in train_subset.indices]
     val_dataset = RoadDataset(images_dir=images_dir, masks_dir=masks_dir, train=False, multiplier=1)
     val_dataset.images = [full_dataset.images[i] for i in val_subset.indices]
@@ -163,7 +163,12 @@ def main() -> None:
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available. Training is configured to run on GPU only.")
+
+    device = torch.device("cuda")
+    torch.backends.cudnn.benchmark = True
+    print(f"Training device: {torch.cuda.get_device_name(0)}")
     model = smp.Unet(
         encoder_name="resnet34",
         encoder_weights="imagenet",
@@ -182,9 +187,34 @@ def main() -> None:
         return 0.5 * bce_loss(pred, target) + 0.5 * dice_loss(pred, target)
 
     best_iou = -1.0
+    start_epoch = 1
     best_model_path = checkpoints_dir / "best_model.pth"
+    last_checkpoint_path = checkpoints_dir / "last_checkpoint.pth"
+    if last_checkpoint_path.exists():
+        checkpoint = torch.load(last_checkpoint_path, map_location=device)
+        checkpoint_epoch = int(checkpoint.get("epoch", 0))
+        resume_answer = input(f"Resume from epoch {checkpoint_epoch}? (y/n): ").strip().lower()
+        if resume_answer == "y":
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            best_iou = float(checkpoint.get("best_iou", -1.0))
+            start_epoch = checkpoint_epoch + 1
+            print(f"Resumed training from epoch {checkpoint_epoch}.")
+        else:
+            print("Starting new training run.")
+    else:
+        print("No previous last checkpoint found, starting new training run.")
 
-    for epoch in range(1, epochs + 1):
+    print(f"Dataset: {len(full_dataset.images)} pairs | batch: {BATCH_SIZE} | epochs: {EPOCHS} | device: {device}")
+    print("Training started...")
+
+    if start_epoch > epochs:
+        print(f"Checkpoint epoch {start_epoch - 1} already reached total epochs ({epochs}).")
+        print(f"Training done. Best IoU: {best_iou:.4f}")
+        return
+
+    for epoch in range(start_epoch, epochs + 1):
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_iou = validate(model, val_loader, criterion, device)
 
@@ -198,6 +228,16 @@ def main() -> None:
             f"val_loss: {val_loss:.4f} | val_iou: {val_iou:.4f} | lr: {current_lr:.6f}"
         )
         scheduler.step()
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "best_iou": best_iou,
+            },
+            last_checkpoint_path,
+        )
 
     print(f"Training done. Best IoU: {best_iou:.4f}")
 

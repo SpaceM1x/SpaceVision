@@ -5,3 +5,6 @@ backend/.venv/
 backend/data/
 __pycache__/
 *.pyc
+road_segmentation/data/images/
+road_segmentation/data/masks/
+road_segmentation/selection_*.png
