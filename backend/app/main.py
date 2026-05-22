@@ -311,6 +311,74 @@ def _diurnal_component(utc_dt: datetime, lon: float) -> float:
     return -1.0 + afternoon_peak * 5.0
 
 
+def _build_risk_reason(
+    probability: float,
+    road_distance: float | None,
+    settlement_distance: float | None,
+    road_density: float,
+    settlement_density: float,
+    season_score: float,
+    diurnal_score: float,
+) -> str:
+    if road_distance is None and settlement_distance is None:
+        return (
+            "Риск оценен по ограниченным данным OSM: рядом не удалось надежно определить дороги и поселения, "
+            "поэтому вероятность снижена и требует ручной проверки."
+        )
+
+    proximity_pressure = max(
+        _distance_decay_score(road_distance, max_score=1.0, scale_m=2100.0),
+        _distance_decay_score(settlement_distance, max_score=1.0, scale_m=6200.0),
+    )
+    anthropogenic_pressure = max(
+        proximity_pressure,
+        0.7 * road_density + 0.6 * settlement_density,
+    )
+    temporal_pressure = season_score + diurnal_score
+
+    risk_level = _risk_level_from_probability(probability)
+    if risk_level == "high":
+        if anthropogenic_pressure >= 0.72:
+            return (
+                "Высокий риск: точка расположена в зоне сильного антропогенного влияния "
+                "(близко к дорогам/населенным пунктам), где выше вероятность возгораний от деятельности человека."
+            )
+        if temporal_pressure >= 10:
+            return (
+                "Высокий риск: сезонный и дневной факторы сейчас близки к пиковым, "
+                "поэтому даже при умеренной удаленности от инфраструктуры вероятность пожара повышена."
+            )
+        return (
+            "Высокий риск: совокупность факторов (инфраструктура поблизости, плотность объектов и текущие временные условия) "
+            "сформировала критически высокую вероятность возгорания."
+        )
+
+    if risk_level == "medium":
+        if anthropogenic_pressure >= 0.55:
+            return (
+                "Средний риск: есть заметная близость к дорогам или населенным пунктам, "
+                "что увеличивает вероятность антропогенного источника огня."
+            )
+        if temporal_pressure >= 5:
+            return (
+                "Средний риск: ключевой вклад вносят сезон и время суток, "
+                "поэтому вероятность пожара выше фоновой даже без экстремальной близости к инфраструктуре."
+            )
+        return (
+            "Средний риск: факторы опасности выражены умеренно и не достигают критических значений, "
+            "но требуют наблюдения."
+        )
+
+    if anthropogenic_pressure < 0.25 and temporal_pressure < 3:
+        return (
+            "Низкий риск: точка достаточно удалена от основных источников антропогенного воздействия, "
+            "а текущие сезонно-временные условия близки к фоновым."
+        )
+    return (
+        "Низкий риск: существенных факторов, указывающих на высокую вероятность возгорания, не выявлено."
+    )
+
+
 class IgnoreMissingTileAccessLog(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
@@ -490,8 +558,9 @@ def point_risk(
     settlement_distance_score = _distance_decay_score(settlement_distance, max_score=24.0, scale_m=6200.0)
     road_density_score = 16.0 * road_density
     settlement_density_score = 14.0 * settlement_density
-    season_score = _seasonal_component(datetime.utcnow().month)
-    diurnal_score = _diurnal_component(datetime.utcnow(), lon)
+    now_utc = datetime.utcnow()
+    season_score = _seasonal_component(now_utc.month)
+    diurnal_score = _diurnal_component(now_utc, lon)
     data_penalty = -8.0 if road_distance is None and settlement_distance is None else 0.0
 
     probability = (
@@ -505,6 +574,15 @@ def point_risk(
         + data_penalty
     )
     probability = max(0.0, min(100.0, probability))
+    risk_reason = _build_risk_reason(
+        probability=probability,
+        road_distance=road_distance,
+        settlement_distance=settlement_distance,
+        road_density=road_density,
+        settlement_density=settlement_density,
+        season_score=season_score,
+        diurnal_score=diurnal_score,
+    )
 
     return PointRiskOut(
         lat=lat,
@@ -513,6 +591,7 @@ def point_risk(
         settlement_distance_m=settlement_distance,
         fire_probability=probability,
         risk_level=_risk_level_from_probability(probability),
+        risk_reason=risk_reason,
     )
 
 

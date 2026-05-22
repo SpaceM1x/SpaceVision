@@ -659,6 +659,7 @@ export default function App() {
                       <div className="fire-risk-single">
                         <span>Вероятность пожара</span>
                         <strong>{pointRisk.fire_probability.toFixed(1)}%</strong>
+                        {pointRisk.risk_reason && <p>{pointRisk.risk_reason}</p>}
                       </div>
                     )}
                   </>
