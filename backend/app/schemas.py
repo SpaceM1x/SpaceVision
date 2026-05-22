@@ -75,3 +75,4 @@ class PointRiskOut(BaseModel):
     settlement_distance_m: float | None = None
     fire_probability: float
     risk_level: str
+    risk_reason: str
