@@ -85,6 +85,21 @@ function getUploadBounds(upload) {
   ];
 }
 
+function formatUploadCoords(upload) {
+  const bounds = getUploadBounds(upload);
+  if (!bounds) return "Координаты TIFF: не найдены";
+  const [[minLat, minLon], [maxLat, maxLon]] = bounds;
+  return `Координаты TIFF: lat ${minLat.toFixed(5)}..${maxLat.toFixed(
+    5
+  )}, lon ${minLon.toFixed(5)}..${maxLon.toFixed(5)}`;
+}
+
+function riskEmojiByLevel(level) {
+  if (level === "high") return "🔥";
+  if (level === "medium") return "⚠️";
+  return "🌲";
+}
+
 function PieChart({ value, size = 130, color = "#3a8d5f", background = "#e1efe4", label }) {
   const clamped = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
   const style = {
@@ -152,9 +167,6 @@ export default function App() {
   const [nnProgress, setNnProgress] = useState(0);
   const [tileForm, setTileForm] = useState({
     title: "",
-    z: "",
-    x: "",
-    y: "",
   });
   const [credentials, setCredentials] = useState({
     username: "",
@@ -268,15 +280,17 @@ export default function App() {
     if (!file) {
       return;
     }
+    const ext = file.name.toLowerCase();
+    if (!(ext.endsWith(".tif") || ext.endsWith(".tiff"))) {
+      console.error("Допустимы только TIFF файлы (.tif, .tiff).");
+      return;
+    }
     setIsLoading(true);
     setNnProgress(0);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("title", tileForm.title);
-      formData.append("tile_z", tileForm.z);
-      formData.append("tile_x", tileForm.x);
-      formData.append("tile_y", tileForm.y);
       const progressTimer = setInterval(() => {
         setNnProgress((prev) => Math.min(prev + 8, 94));
       }, 180);
@@ -287,7 +301,7 @@ export default function App() {
       }
       setNnProgress(100);
       setFile(null);
-      setTileForm({ title: "", z: "", x: "", y: "" });
+      setTileForm({ title: "" });
       await loadUploads();
       await loadAnalytics();
       setActiveTab("history");
@@ -299,10 +313,14 @@ export default function App() {
     }
   }
 
-  async function handleMapPointSelect(latlng) {
+  async function handleMapPointSelect(latlng, options = {}) {
     if (!latlng || !token) return;
-    setMapFocusBounds(null);
-    setDetectedRoadCenter(null);
+    const { preserveOverlayFocus = false } = options;
+    if (!preserveOverlayFocus) {
+      setMapFocusBounds(null);
+      setDetectedRoadCenter(null);
+      setActiveMapOverlay(null);
+    }
     setSelectedPoint(latlng);
     setIsPointRiskLoading(true);
     setPointRiskProgress(0);
@@ -354,7 +372,7 @@ export default function App() {
     setActiveTab("maps");
 
     if (token) {
-      handleMapPointSelect({ lat: centerLat, lng: centerLon });
+      handleMapPointSelect({ lat: centerLat, lng: centerLon }, { preserveOverlayFocus: true });
     }
   }
 
@@ -470,35 +488,9 @@ export default function App() {
                   }
                   disabled={!canUpload}
                 />
-                <div className="inputs-row">
-                  <input
-                    placeholder="z (опционально)"
-                    value={tileForm.z}
-                    onChange={(event) =>
-                      setTileForm((prev) => ({ ...prev, z: event.target.value }))
-                    }
-                    disabled={!canUpload}
-                  />
-                  <input
-                    placeholder="x (опционально)"
-                    value={tileForm.x}
-                    onChange={(event) =>
-                      setTileForm((prev) => ({ ...prev, x: event.target.value }))
-                    }
-                    disabled={!canUpload}
-                  />
-                  <input
-                    placeholder="y (опционально)"
-                    value={tileForm.y}
-                    onChange={(event) =>
-                      setTileForm((prev) => ({ ...prev, y: event.target.value }))
-                    }
-                    disabled={!canUpload}
-                  />
-                </div>
                 <input
                   type="file"
-                  accept=".png,.jpg,.jpeg,.tif,.tiff"
+                  accept=".tif,.tiff"
                   onChange={(event) => setFile(event.target.files?.[0] || null)}
                   disabled={!canUpload}
                 />
@@ -644,7 +636,7 @@ export default function App() {
                     {isPointRiskLoading && (
                       <div className="progress-wrap">
                         <div className="progress-head">
-                          <span>Расчет вероятности пожара...</span>
+                          <span>Оценка риска пожара...</span>
                           <strong>{pointRiskProgress}%</strong>
                         </div>
                         <div className="progress-track">
@@ -657,9 +649,11 @@ export default function App() {
                     )}
                     {!isPointRiskLoading && pointRisk && (
                       <div className="fire-risk-single">
-                        <span>Вероятность пожара</span>
-                        <strong>{pointRisk.fire_probability.toFixed(1)}%</strong>
-                        {pointRisk.risk_reason && <p>{pointRisk.risk_reason}</p>}
+                        <p>
+                          {`${riskEmojiByLevel(pointRisk.risk_level)} ${
+                            pointRisk.risk_reason || "Недостаточно данных для описания риска."
+                          }`}
+                        </p>
                       </div>
                     )}
                   </>
@@ -758,7 +752,7 @@ export default function App() {
                         <strong>{upload.title || "Без названия"}</strong>
                         <span>{formatDate(upload.created_at)}</span>
                         <span>
-                          tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
+                          {formatUploadCoords(upload)}
                         </span>
                         <div className="history-road-metric">
                           <div className="history-road-metric-head">
@@ -912,7 +906,7 @@ export default function App() {
                       <span>Пользователь: {upload.uploaded_by || "unknown"}</span>
                       <span>{formatDate(upload.created_at)}</span>
                       <span>
-                        tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
+                        {formatUploadCoords(upload)}
                       </span>
                       <span>
                         {upload.image_url && (

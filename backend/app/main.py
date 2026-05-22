@@ -534,8 +534,8 @@ async def create_upload(
     parsed_tile_y = parse_tile_value(tile_y, "tile_y")
 
     extension = Path(file.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
-        raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG/TIFF.")
+    if extension not in {".tif", ".tiff"}:
+        raise HTTPException(status_code=400, detail="Поддерживаются только TIFF файлы (.tif, .tiff).")
     filename = f"{uuid4().hex}{extension}"
     destination = UPLOAD_DIR / filename
     content = await file.read()
