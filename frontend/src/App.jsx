@@ -19,7 +19,7 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import { API_URL, getAnalyticsSummary, getUploads, login, uploadTile } from "./api";
+import { API_URL, getAnalyticsSummary, getPointRisk, getUploads, login, uploadTile } from "./api";
 
 const menuItems = [
   { key: "maps", label: "Карты", icon: MapIcon },
@@ -35,8 +35,6 @@ function formatDate(value) {
   if (Number.isNaN(parsed.getTime())) return "—";
   return parsed.toLocaleString("ru-RU");
 }
-
-const MOCK_FIRE_PROBABILITY = 22;
 
 function MapClickHandler({ onClick }) {
   useMapEvents({
@@ -313,12 +311,15 @@ export default function App() {
         setPointRiskProgress((prev) => Math.min(prev + 7, 93));
       }, 170);
       try {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const [risk] = await Promise.all([
+          getPointRisk(token, latlng.lat, latlng.lng),
+          new Promise((resolve) => setTimeout(resolve, 1200)),
+        ]);
+        setPointRisk(risk);
       } finally {
         clearInterval(progressTimer);
       }
       setPointRiskProgress(100);
-      setPointRisk({ fire_probability: MOCK_FIRE_PROBABILITY });
     } catch (error) {
       setPointRisk(null);
       console.error("Не удалось рассчитать риск пожара:", error);
@@ -347,10 +348,14 @@ export default function App() {
         : null
     );
     setSelectedPoint(null);
-    setPointRisk({ fire_probability: MOCK_FIRE_PROBABILITY });
+    setPointRisk(null);
     setIsPointRiskLoading(false);
     setPointRiskProgress(0);
     setActiveTab("maps");
+
+    if (token) {
+      handleMapPointSelect({ lat: centerLat, lng: centerLon });
+    }
   }
 
   const analyticsItems = Array.isArray(analytics?.items) ? analytics.items : [];
