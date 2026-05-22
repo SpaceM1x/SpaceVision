@@ -176,7 +176,7 @@ def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return radius * c
 
 
-def _nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 20000) -> tuple[float | None, float | None]:
+def _nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 20000) -> dict[str, float | None]:
     query = f"""
 [out:json][timeout:20];
 (
@@ -201,10 +201,37 @@ out center;
             payload_json = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, ValueError):
         # Keep algorithm available even when external OSM service is unreachable.
-        return None, None
+        return {
+            "road_distance_m": None,
+            "settlement_distance_m": None,
+            "road_density": 0.0,
+            "settlement_density": 0.0,
+        }
 
     road_distances: list[float] = []
     settlement_distances: list[float] = []
+    road_proximity_sum = 0.0
+    settlement_proximity_sum = 0.0
+
+    road_class_weight = {
+        "motorway": 1.0,
+        "trunk": 0.95,
+        "primary": 0.85,
+        "secondary": 0.72,
+        "tertiary": 0.58,
+        "residential": 0.45,
+        "unclassified": 0.42,
+        "service": 0.30,
+        "track": 0.22,
+        "path": 0.15,
+    }
+    settlement_weight = {
+        "city": 1.0,
+        "town": 0.78,
+        "village": 0.54,
+        "hamlet": 0.36,
+        "isolated_dwelling": 0.22,
+    }
 
     for element in payload_json.get("elements", []):
         element_type = element.get("type")
@@ -223,29 +250,65 @@ out center;
         distance = haversine_meters(lat, lon, float(elem_lat), float(elem_lon))
         if "highway" in tags:
             road_distances.append(distance)
+            highway_type = str(tags.get("highway", ""))
+            road_weight = road_class_weight.get(highway_type, 0.35)
+            road_proximity_sum += math.exp(-distance / 2200.0) * road_weight
         if tags.get("place") in {"city", "town", "village", "hamlet", "isolated_dwelling"}:
             settlement_distances.append(distance)
+            place_type = str(tags.get("place", ""))
+            place_weight = settlement_weight.get(place_type, 0.4)
+            settlement_proximity_sum += math.exp(-distance / 6500.0) * place_weight
 
     road_distance = min(road_distances) if road_distances else None
     settlement_distance = min(settlement_distances) if settlement_distances else None
-    return road_distance, settlement_distance
-
-
-def _distance_to_score(distance_m: float | None, thresholds: list[tuple[float, float]], missing_score: float) -> float:
-    if distance_m is None:
-        return missing_score
-    for max_distance, score in thresholds:
-        if distance_m <= max_distance:
-            return score
-    return 0.0
+    road_density = max(0.0, min(1.0, road_proximity_sum / 2.8))
+    settlement_density = max(0.0, min(1.0, settlement_proximity_sum / 1.8))
+    return {
+        "road_distance_m": road_distance,
+        "settlement_distance_m": settlement_distance,
+        "road_density": road_density,
+        "settlement_density": settlement_density,
+    }
 
 
 def _risk_level_from_probability(probability: float) -> str:
-    if probability >= 70:
+    if probability >= 75:
         return "high"
-    if probability >= 40:
+    if probability >= 45:
         return "medium"
     return "low"
+
+
+def _distance_decay_score(distance_m: float | None, max_score: float, scale_m: float) -> float:
+    if distance_m is None:
+        return 0.0
+    return max_score * math.exp(-distance_m / scale_m)
+
+
+def _seasonal_component(month: int) -> float:
+    # Approximation for continental climate: higher fire risk in warm dry season.
+    month_weights = {
+        1: -4.0,
+        2: -3.0,
+        3: -1.0,
+        4: 3.0,
+        5: 7.0,
+        6: 10.0,
+        7: 11.0,
+        8: 8.0,
+        9: 4.0,
+        10: 1.0,
+        11: -2.0,
+        12: -4.0,
+    }
+    return month_weights.get(month, 0.0)
+
+
+def _diurnal_component(utc_dt: datetime, lon: float) -> float:
+    # Local solar time approximation from longitude without timezone DB.
+    local_hour = (utc_dt.hour + lon / 15.0) % 24.0
+    afternoon_peak = math.exp(-((local_hour - 15.0) ** 2) / (2 * 3.2**2))
+    return -1.0 + afternoon_peak * 5.0
 
 
 class IgnoreMissingTileAccessLog(logging.Filter):
@@ -414,34 +477,33 @@ def point_risk(
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="Некорректные координаты.")
 
-    road_distance, settlement_distance = _nearest_distances_from_osm(lat, lon)
+    osm_context = _nearest_distances_from_osm(lat, lon)
+    road_distance = osm_context["road_distance_m"]
+    settlement_distance = osm_context["settlement_distance_m"]
+    road_density = float(osm_context["road_density"] or 0.0)
+    settlement_density = float(osm_context["settlement_density"] or 0.0)
 
-    # Rule-based score (no neural network): the closer to roads/settlements, the higher ignition risk.
-    road_score = _distance_to_score(
-        road_distance,
-        thresholds=[
-            (200.0, 35.0),
-            (500.0, 28.0),
-            (1000.0, 20.0),
-            (3000.0, 12.0),
-            (7000.0, 6.0),
-        ],
-        missing_score=2.0,
-    )
-    settlement_score = _distance_to_score(
-        settlement_distance,
-        thresholds=[
-            (500.0, 35.0),
-            (1500.0, 28.0),
-            (4000.0, 20.0),
-            (10000.0, 12.0),
-            (20000.0, 6.0),
-        ],
-        missing_score=2.0,
-    )
+    # Rule-based wildfire ignition model:
+    # human access pressure (roads + settlements) + temporal (season + daytime).
+    base_score = 14.0
+    road_distance_score = _distance_decay_score(road_distance, max_score=28.0, scale_m=2100.0)
+    settlement_distance_score = _distance_decay_score(settlement_distance, max_score=24.0, scale_m=6200.0)
+    road_density_score = 16.0 * road_density
+    settlement_density_score = 14.0 * settlement_density
+    season_score = _seasonal_component(datetime.utcnow().month)
+    diurnal_score = _diurnal_component(datetime.utcnow(), lon)
+    data_penalty = -8.0 if road_distance is None and settlement_distance is None else 0.0
 
-    natural_background_score = 18.0
-    probability = natural_background_score + road_score + settlement_score
+    probability = (
+        base_score
+        + road_distance_score
+        + settlement_distance_score
+        + road_density_score
+        + settlement_density_score
+        + season_score
+        + diurnal_score
+        + data_penalty
+    )
     probability = max(0.0, min(100.0, probability))
 
     return PointRiskOut(
