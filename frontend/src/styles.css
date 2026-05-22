@@ -492,18 +492,19 @@ button:hover {
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  text-align: left;
 }
 
 .fire-risk-single span {
   color: var(--text-muted);
 }
 
-.fire-risk-single strong {
+.fire-risk-single p {
+  margin: 0;
   color: var(--primary-800);
-  font-size: 22px;
 }
 
 .layer-switcher {
