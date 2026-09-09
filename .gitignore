@@ -14,3 +14,14 @@ road_segmentation/checkpoints/*
 !road_segmentation/checkpoints/best_model.pth
 road_segmentation/*.log
 road_segmentation/selection_*.png
+dev-server.log
+
+# Секреты и локальные настройки
+.env
+.env.*
+
+# Настройки редакторов/ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
