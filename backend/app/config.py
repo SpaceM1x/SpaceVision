@@ -11,7 +11,17 @@ from pathlib import Path
 # --- Road source (ESRI Shapefile) -----------------------------------------
 # Path to the roads shapefile. A valid shapefile consists of the companion
 # files: .shp, .shx, .dbf, .prj (and optionally .cpg).
-ROADS_SHP_PATH = Path(os.environ.get("ROADS_SHP_PATH", "gis/roads/roads.shp")).resolve()
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_shp_path(raw: str) -> Path:
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return (_PROJECT_ROOT / path).resolve()
+
+
+ROADS_SHP_PATH = _resolve_shp_path(os.environ.get("ROADS_SHP_PATH", "gis/roads/roads.shp"))
 
 # --- Road influence model --------------------------------------------------
 # Characteristic influence distance, in metres.
