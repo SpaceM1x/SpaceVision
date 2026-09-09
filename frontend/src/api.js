@@ -13,10 +13,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -34,6 +31,22 @@ export async function login(username, password) {
 export async function getRoads(token) {
   const response = await fetchWithTimeout(`${API_URL}/roads/geojson`, {
     headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
+export async function getRoadsStatus(token) {
+  const response = await fetchWithTimeout(`${API_URL}/roads/status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
+export async function uploadRoads(formData, token) {
+  const response = await fetchWithTimeout(`${API_URL}/roads/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
   });
   return parseResponse(response);
 }
