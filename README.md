@@ -138,7 +138,7 @@ backend/app/
   road_influence.py  # I(R) = 1 / (1 + R / R0)
   fire_risk.py       # P_base и P_fire
   osm.py             # legacy-контекст OSM для P_base
-  main.py            # FastAPI: /auth/login, /health, /roads/geojson, /risk/point
+  main.py            # FastAPI: /auth/login, /health, /roads/geojson, /roads/status, /roads/upload, /risk/point
 ```
 
 ## Тесты

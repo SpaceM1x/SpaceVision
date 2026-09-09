@@ -8,8 +8,9 @@ nearest road is computed in metres in a metric CRS, and the road influence
 """
 import json
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pyproj import Transformer
 from shapely.geometry import Point
@@ -120,6 +121,61 @@ def roads_geojson(current_user: User = Depends(get_current_user)) -> dict:
     except RoadDataError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return json.loads(gdf.to_crs("EPSG:4326").to_json())
+
+
+ALLOWED_ROAD_EXTENSIONS = {".shp", ".shx", ".dbf", ".prj", ".cpg"}
+
+
+@app.get("/roads/status")
+def roads_status(current_user: User = Depends(get_current_user)) -> dict:
+    """Return whether the SHP roads have been uploaded and which files exist."""
+    del current_user
+    files = []
+    for ext in sorted(ALLOWED_ROAD_EXTENSIONS):
+        candidate = ROADS_SHP_PATH.with_suffix(ext)
+        if candidate.exists():
+            files.append(candidate.name)
+    return {
+        "uploaded": ROADS_SHP_PATH.exists(),
+        "files": files,
+        "roads_shp": str(ROADS_SHP_PATH),
+    }
+
+
+@app.post("/roads/upload")
+async def upload_roads(
+    files: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Upload the roads shapefile (.shp/.shx/.dbf/.prj/.cpg)."""
+    del current_user
+    if not files:
+        raise HTTPException(status_code=400, detail="Файлы не загружены.")
+
+    target_dir = ROADS_SHP_PATH.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    saved: list[str] = []
+    for upload in files:
+        ext = Path(upload.filename).suffix.lower()
+        if ext not in ALLOWED_ROAD_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Недопустимый файл: {upload.filename}. Ожидаются .shp/.shx/.dbf/.prj/.cpg.",
+            )
+        dest = target_dir / f"roads{ext}"
+        dest.write_bytes(await upload.read())
+        saved.append(dest.name)
+
+    if not (target_dir / "roads.shp").exists():
+        raise HTTPException(status_code=400, detail="Отсутствует файл .shp.")
+    if not (target_dir / "roads.prj").exists():
+        raise HTTPException(
+            status_code=400,
+            detail="Отсутствует файл .prj — он обязателен (содержит CRS).",
+        )
+
+    return {"uploaded": saved, "roads_shp": str(ROADS_SHP_PATH)}
 
 
 def _build_risk_reason(
