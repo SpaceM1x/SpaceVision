@@ -1,13 +1,7 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
-python-multipart
 pyjwt
-torch
-torchvision
-segmentation-models-pytorch
-albumentations
-opencv-python-headless
-numpy
-Pillow
+geopandas
+shapely
 pyproj

@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from pydantic import BaseModel
 
 
@@ -14,65 +12,18 @@ class LoginResponse(BaseModel):
     username: str
 
 
-class UploadOut(BaseModel):
-    id: int
-    title: str
-    tile_z: int
-    tile_x: int
-    tile_y: int
-    min_lat: float | None = None
-    max_lat: float | None = None
-    min_lon: float | None = None
-    max_lon: float | None = None
-    uploaded_by: str
-    created_at: datetime
-    image_url: str | None = None
-    mask_url: str | None = None
-    overlay_url: str | None = None
-
-    class Config:
-        from_attributes = True
-
-
-class AnalyticsPointOut(BaseModel):
-    id: int
-    title: str
-    created_at: datetime
-    road_percentage: float
-
-
-class UploadAnalyticsOut(BaseModel):
-    id: int
-    title: str
-    created_at: datetime
-    uploaded_by: str
-    road_percentage: float
-    background_percentage: float
-    road_pixels: int
-    background_pixels: int
-    component_count: int
-    mean_component_area: float
-    largest_component_area: int
-    mask_url: str | None = None
-    overlay_url: str | None = None
-
-
-class AnalyticsSummaryOut(BaseModel):
-    total_uploads: int
-    uploads_with_predictions: int
-    global_road_coverage: float
-    average_road_percentage: float
-    max_road_percentage: float
-    average_component_count: float
-    timeline: list[AnalyticsPointOut]
-    items: list[UploadAnalyticsOut]
-
-
 class PointRiskOut(BaseModel):
     lat: float
     lon: float
+    # R — distance to the nearest SHP road, in metres.
     road_distance_m: float | None = None
+    # OSM settlement distance retained by the legacy P_base model, in metres.
     settlement_distance_m: float | None = None
+    # I(R) — normalised road influence, in [0, 1].
+    road_influence: float
+    # P_base — legacy rule-based probability, in [0, 1].
+    base_probability: float
+    # P_fire — final probability, in [0, 1].
     fire_probability: float
     risk_level: str
     risk_reason: str
