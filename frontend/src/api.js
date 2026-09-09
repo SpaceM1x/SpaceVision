@@ -22,13 +22,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   }
 }
 
-export async function getUploads(token) {
-  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return parseResponse(response);
-}
-
 export async function login(username, password) {
   const response = await fetchWithTimeout(`${API_URL}/auth/login`, {
     method: "POST",
@@ -38,17 +31,8 @@ export async function login(username, password) {
   return parseResponse(response);
 }
 
-export async function uploadTile(formData, token) {
-  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-  return parseResponse(response);
-}
-
-export async function getAnalyticsSummary(token) {
-  const response = await fetchWithTimeout(`${API_URL}/analytics/summary`, {
+export async function getRoads(token) {
+  const response = await fetchWithTimeout(`${API_URL}/roads/geojson`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseResponse(response);

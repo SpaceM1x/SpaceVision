@@ -5,16 +5,11 @@ backend/.venv/
 backend/data/
 __pycache__/
 *.pyc
-road_segmentation/data/*
-!road_segmentation/data/.gitkeep
-road_segmentation/outputs/*
-!road_segmentation/outputs/.gitkeep
-road_segmentation/checkpoints/*
-!road_segmentation/checkpoints/.gitkeep
-!road_segmentation/checkpoints/best_model.pth
-road_segmentation/*.log
-road_segmentation/selection_*.png
 dev-server.log
+
+# GIS data — user-provided road shapefiles (keep the README)
+gis/roads/*
+!gis/roads/README.md
 
 # Секреты и локальные настройки
 .env
