@@ -442,6 +442,15 @@ def configure_access_logging():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=(
+        r"^http://("
+        r"localhost|127\.0\.0\.1|\[::1\]|"
+        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|"
+        r"192\.168\.\d{1,3}\.\d{1,3}|"
+        r"26\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"):5173$"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

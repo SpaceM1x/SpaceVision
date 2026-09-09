@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">Схема технологий проекта SpaceVision</title>
+  <desc id="desc">Архитектурная схема веб-приложения для загрузки космоснимков, сегментации дорог и отображения результатов на карте.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f8fb"/>
+      <stop offset="100%" stop-color="#edf5ef"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1b2838" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+      <path d="M 0 0 L 13 6.5 L 0 13 z" fill="#2f5d62"/>
+    </marker>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #1b2838; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #52616b; }
+      .box { fill: #ffffff; stroke-width: 2; filter: url(#shadow); }
+      .box-title { font: 700 22px Arial, sans-serif; fill: #1b2838; }
+      .box-text { font: 400 17px Arial, sans-serif; fill: #40515c; }
+      .small { font: 400 15px Arial, sans-serif; fill: #5e6f78; }
+      .tag { font: 700 14px Arial, sans-serif; fill: #ffffff; }
+      .arrow { fill: none; stroke: #2f5d62; stroke-width: 3; marker-end: url(#arrow); }
+      .dash { fill: none; stroke: #78909c; stroke-width: 2.5; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+      .frontend { stroke: #2b7a78; }
+      .backend { stroke: #3a6ea5; }
+      .ml { stroke: #c35f2f; }
+      .storage { stroke: #6d597a; }
+      .external { stroke: #697565; }
+      .pill-frontend { fill: #2b7a78; }
+      .pill-backend { fill: #3a6ea5; }
+      .pill-ml { fill: #c35f2f; }
+      .pill-storage { fill: #6d597a; }
+      .pill-external { fill: #697565; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg)"/>
+
+  <text x="70" y="70" class="title">SpaceVision: текущий технологический стек проекта</text>
+  <text x="70" y="104" class="subtitle">Веб-приложение для загрузки GeoTIFF-снимков, поиска дорог нейросетью и анализа на карте</text>
+
+  <rect x="70" y="170" width="260" height="150" rx="14" class="box frontend"/>
+  <rect x="96" y="194" width="86" height="26" rx="13" class="pill-frontend"/>
+  <text x="116" y="212" class="tag">Клиент</text>
+  <text x="96" y="252" class="box-title">Браузер пользователя</text>
+  <text x="96" y="284" class="box-text">Вход, загрузка снимков,</text>
+  <text x="96" y="309" class="box-text">карта, история, статистика</text>
+
+  <rect x="430" y="145" width="330" height="205" rx="14" class="box frontend"/>
+  <rect x="456" y="169" width="94" height="26" rx="13" class="pill-frontend"/>
+  <text x="478" y="187" class="tag">Frontend</text>
+  <text x="456" y="226" class="box-title">React + Vite</text>
+  <text x="456" y="258" class="box-text">React 18, react-dom</text>
+  <text x="456" y="283" class="box-text">React-Leaflet + Leaflet</text>
+  <text x="456" y="308" class="box-text">lucide-react для иконок</text>
+  <text x="456" y="333" class="small">Запуск: npm run dev --prefix frontend</text>
+
+  <rect x="860" y="145" width="360" height="205" rx="14" class="box backend"/>
+  <rect x="886" y="169" width="90" height="26" rx="13" class="pill-backend"/>
+  <text x="907" y="187" class="tag">Backend</text>
+  <text x="886" y="226" class="box-title">FastAPI API</text>
+  <text x="886" y="258" class="box-text">REST-эндпоинты, CORS</text>
+  <text x="886" y="283" class="box-text">JWT-авторизация, роли</text>
+  <text x="886" y="308" class="box-text">Загрузка TIFF, выдача файлов</text>
+  <text x="886" y="333" class="small">Запуск: uvicorn app.main:app --reload</text>
+
+  <rect x="860" y="455" width="360" height="220" rx="14" class="box ml"/>
+  <rect x="886" y="479" width="112" height="26" rx="13" class="pill-ml"/>
+  <text x="910" y="497" class="tag">ML-модуль</text>
+  <text x="886" y="536" class="box-title">Сегментация дорог</text>
+  <text x="886" y="568" class="box-text">PyTorch + torchvision</text>
+  <text x="886" y="593" class="box-text">segmentation-models-pytorch</text>
+  <text x="886" y="618" class="box-text">U-Net с encoder ResNet34</text>
+  <text x="886" y="643" class="box-text">Pillow, NumPy, OpenCV</text>
+  <text x="886" y="668" class="small">Результат: маска дорог и overlay</text>
+
+  <rect x="430" y="455" width="330" height="220" rx="14" class="box storage"/>
+  <rect x="456" y="479" width="112" height="26" rx="13" class="pill-storage"/>
+  <text x="483" y="497" class="tag">Данные</text>
+  <text x="456" y="536" class="box-title">SQLite + файлы</text>
+  <text x="456" y="568" class="box-text">SQLAlchemy ORM</text>
+  <text x="456" y="593" class="box-text">users, uploads</text>
+  <text x="456" y="618" class="box-text">backend/data/app.db</text>
+  <text x="456" y="643" class="box-text">uploads/ и predictions/</text>
+  <text x="456" y="668" class="small">Хранит снимки, маски, координаты</text>
+
+  <rect x="70" y="455" width="260" height="220" rx="14" class="box external"/>
+  <rect x="96" y="479" width="112" height="26" rx="13" class="pill-external"/>
+  <text x="124" y="497" class="tag">Внешнее</text>
+  <text x="96" y="536" class="box-title">Карты и OSM</text>
+  <text x="96" y="568" class="box-text">OpenStreetMap tiles</text>
+  <text x="96" y="593" class="box-text">Esri World Imagery</text>
+  <text x="96" y="618" class="box-text">Overpass API</text>
+  <text x="96" y="643" class="box-text">Nominatim fallback</text>
+  <text x="96" y="668" class="small">Подложки и расчет контекста риска</text>
+
+  <rect x="470" y="760" width="680" height="74" rx="14" fill="#ffffff" stroke="#8aa399" stroke-width="2" filter="url(#shadow)"/>
+  <text x="505" y="792" class="box-title">Итоговый пользовательский результат</text>
+  <text x="505" y="822" class="box-text">Карта с загруженным GeoTIFF, оверлеем найденных дорог, статистикой и оценкой пожарного риска</text>
+
+  <path d="M 330 245 L 430 245" class="arrow"/>
+  <path d="M 760 245 L 860 245" class="arrow"/>
+  <path d="M 1040 350 L 1040 455" class="arrow"/>
+  <path d="M 860 565 L 760 565" class="arrow"/>
+  <path d="M 595 350 L 595 455" class="arrow"/>
+  <path d="M 430 565 L 330 565" class="dash"/>
+  <path d="M 760 675 C 790 735 820 750 860 760" class="arrow"/>
+  <path d="M 1030 675 C 1030 730 1015 748 980 760" class="arrow"/>
+  <path d="M 200 320 C 200 385 200 420 200 455" class="dash"/>
+  <path d="M 1220 245 C 1280 245 1285 565 1220 565" class="dash"/>
+
+  <text x="360" y="226" class="small">интерфейс</text>
+  <text x="782" y="226" class="small">HTTP API</text>
+  <text x="1062" y="405" class="small">TIFF на инференс</text>
+  <text x="777" y="548" class="small">маска и overlay</text>
+  <text x="616" y="405" class="small">метаданные</text>
+  <text x="340" y="548" class="small">тайлы и слои</text>
+  <text x="1242" y="395" class="small">OSM/карты</text>
+
+  <rect x="70" y="720" width="300" height="114" rx="14" fill="#ffffff" stroke="#c6a15b" stroke-width="2" filter="url(#shadow)"/>
+  <text x="96" y="754" class="box-title">Запуск проекта</text>
+  <text x="96" y="786" class="box-text">npm start</text>
+  <text x="96" y="811" class="small">concurrently поднимает backend и frontend</text>
+</svg>
