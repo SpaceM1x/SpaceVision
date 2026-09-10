@@ -28,9 +28,10 @@ from .auth import create_access_token, decode_token, hash_password, verify_passw
 from .config import ALPHA, METRIC_CRS, R0_METERS, ROADS_SHP_PATH
 from .database import Base, PREDICTION_DIR, SessionLocal, UPLOAD_DIR, engine, get_db
 from .distance import distance_to_nearest_road
+from .fire_history import FireRiskRecord, record_fire_risk
 from .fire_risk import (
-    base_probability,
-    calculate_fire_probability,
+    base_probability_breakdown,
+    calculate_fire_probability_breakdown,
     risk_level_from_probability,
 )
 from .gis import select_metric_crs, to_metric
@@ -40,6 +41,7 @@ from .road_data import RoadDataError, RoadDataProvider
 from .road_influence import road_influence
 from .schemas import (
     AnalyticsSummaryOut,
+    FireRiskRecordOut,
     LoginRequest,
     LoginResponse,
     PointRiskOut,
@@ -235,6 +237,10 @@ async def upload_roads(
     return {"uploaded": saved, "roads_shp": str(ROADS_SHP_PATH)}
 
 
+def _risk_level_label(level: str) -> str:
+    return {"high": "Высокий", "medium": "Средний", "low": "Низкий"}.get(level, level)
+
+
 def _build_risk_reason(
     p_fire: float,
     p_base: float,
@@ -251,10 +257,106 @@ def _build_risk_reason(
         else "нет данных о дорогах (SHP)"
     )
     return (
-        f"Вероятность пожара {percent:.1f}% ({level}). "
+        f"Вероятность пожара {percent:.1f}% ({_risk_level_label(level)}). "
         f"Базовая вероятность {p_base * 100:.1f}%, влияние дороги {influence:.2f} "
         f"(R0={r0_m:.0f} м, alpha={alpha:.2f}), {road_txt}."
     )
+
+
+def _build_risk_summary(lat: float, lon: float, p_fire: float, level: str) -> str:
+    return (
+        f"{_risk_level_label(level)} — {(p_fire * 100.0):.1f}% "
+        f"(широта {lat:.4f}, долгота {lon:.4f})"
+    )
+
+
+def _build_risk_explanation(
+    *,
+    lat: float,
+    lon: float,
+    road_distance_m: float | None,
+    settlement_distance_m: float | None,
+    influence: float,
+    base: dict,
+    fire: dict,
+    p_fire: float,
+    level: str,
+) -> dict:
+    """Build a structured, per-factor explanation of one calculation."""
+    return {
+        "equation": "P_fire = 1 − (1 − P_base) · (1 − α · I(R))",
+        "coordinates": {"lat": lat, "lon": lon},
+        "base": {
+            "label": "Базовая вероятность P_base",
+            "formula": "P_base = clamp(Σ баллов / 100)",
+            "result": base["p_base"],
+            "total_score": base["total_score"],
+            "factors": [
+                {"name": "Базовый балл", "value": base["base_score"], "note": "константа"},
+                {
+                    "name": "Расстояние до дороги (OSM)",
+                    "value": base["road_distance_score"],
+                    "input": base["road_distance_m"],
+                    "note": "28·exp(−d/2100 м)",
+                },
+                {
+                    "name": "Расстояние до поселения",
+                    "value": base["settlement_distance_score"],
+                    "input": base["settlement_distance_m"],
+                    "note": "24·exp(−d/6200 м)",
+                },
+                {
+                    "name": "Плотность дорог",
+                    "value": base["road_density_score"],
+                    "input": base["road_density"],
+                    "note": "16·плотность",
+                },
+                {
+                    "name": "Плотность поселений",
+                    "value": base["settlement_density_score"],
+                    "input": base["settlement_density"],
+                    "note": "14·плотность",
+                },
+                {
+                    "name": "Сезонный фактор",
+                    "value": base["season_score"],
+                    "input": base["season_month"],
+                    "note": f"месяц {base['season_month']}",
+                },
+                {"name": "Дневной фактор", "value": base["diurnal_score"], "note": "пик в 15:00"},
+                {
+                    "name": "Штраф за отсутствие данных",
+                    "value": base["data_penalty"],
+                    "note": "−8 если нет OSM-данных",
+                },
+            ],
+        },
+        "road": {
+            "label": "Влияние дороги I(R)",
+            "formula": "I(R) = 1 / (1 + R / R0)",
+            "R": road_distance_m,
+            "R0": R0_METERS,
+            "alpha": ALPHA,
+            "result": influence,
+        },
+        "final": {
+            "label": "Итоговая вероятность P_fire",
+            "formula": "P_fire = 1 − (1 − P_base) · (1 − α · I(R))",
+            "result": p_fire,
+            "terms": [
+                {"name": "P_base", "value": fire["p_base"]},
+                {"name": "I(R)", "value": fire["influence"]},
+                {"name": "α", "value": fire["alpha"]},
+                {"name": "1 − P_base", "value": fire["one_minus_p_base"]},
+                {"name": "α · I(R)", "value": fire["alpha_times_influence"]},
+                {"name": "1 − α·I(R)", "value": fire["one_minus_alpha_influence"]},
+                {"name": "(1−P_base)·(1−α·I(R))", "value": fire["product"]},
+                {"name": "P_fire", "value": fire["p_fire"]},
+            ],
+        },
+        "risk_level": level,
+        "risk_level_label": _risk_level_label(level),
+    }
 
 
 @app.get("/risk/point", response_model=PointRiskOut)
@@ -262,9 +364,8 @@ def point_risk(
     lat: float,
     lon: float,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> PointRiskOut:
-    del current_user
-
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="Некорректные координаты.")
 
@@ -285,7 +386,7 @@ def point_risk(
 
     # Legacy P_base model (OSM settlement/road context + seasonal/daytime factors).
     osm_context = nearest_distances_from_osm(lat, lon)
-    p_base = base_probability(
+    base = base_probability_breakdown(
         road_distance_m=osm_context["road_distance_m"],
         settlement_distance_m=osm_context["settlement_distance_m"],
         road_density=float(osm_context["road_density"] or 0.0),
@@ -293,8 +394,36 @@ def point_risk(
         now_utc=datetime.utcnow(),
         lon=lon,
     )
+    p_base = base["p_base"]
 
-    p_fire = calculate_fire_probability(p_base, influence, ALPHA)
+    fire = calculate_fire_probability_breakdown(p_base, influence, ALPHA)
+    p_fire = fire["p_fire"]
+    level = risk_level_from_probability(p_fire * 100.0)
+
+    explanation = _build_risk_explanation(
+        lat=lat,
+        lon=lon,
+        road_distance_m=r,
+        settlement_distance_m=osm_context["settlement_distance_m"],
+        influence=influence,
+        base=base,
+        fire=fire,
+        p_fire=p_fire,
+        level=level,
+    )
+    summary = _build_risk_summary(lat, lon, p_fire, level)
+
+    # Persist the calculation into the history module.
+    record_fire_risk(
+        db,
+        username=current_user.username,
+        lat=lat,
+        lon=lon,
+        fire_probability=p_fire,
+        risk_level=level,
+        summary=summary,
+        explanation=explanation,
+    )
 
     return PointRiskOut(
         lat=lat,
@@ -304,9 +433,21 @@ def point_risk(
         road_influence=influence,
         base_probability=p_base,
         fire_probability=p_fire,
-        risk_level=risk_level_from_probability(p_fire * 100.0),
+        risk_level=level,
         risk_reason=_build_risk_reason(p_fire, p_base, influence, r, R0_METERS, ALPHA),
+        summary=summary,
+        explanation=explanation,
     )
+
+
+@app.get("/risk/history", response_model=list[FireRiskRecordOut])
+def risk_history(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    del current_user
+    records = db.query(FireRiskRecord).order_by(FireRiskRecord.created_at.desc()).all()
+    return [record.to_out() for record in records]
+
 
 @app.post("/uploads", response_model=UploadOut)
 async def create_upload(

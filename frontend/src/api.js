@@ -85,4 +85,11 @@ export async function getAnalyticsSummary(token) {
   return parseResponse(response);
 }
 
+export async function getRiskHistory(token) {
+  const response = await fetchWithTimeout(`${API_URL}/risk/history`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
 export { API_URL };
