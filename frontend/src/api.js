@@ -3,8 +3,19 @@ const API_URL =
 
 async function parseResponse(response) {
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Ошибка API");
+    const text = await response.text();
+    let message = text || "Ошибка API";
+    try {
+      const data = JSON.parse(text);
+      if (data && typeof data.detail === "string") {
+        message = data.detail;
+      } else if (data && Array.isArray(data.detail)) {
+        message = data.detail.map((item) => item.msg || String(item)).join("; ");
+      }
+    } catch {
+      // The body is not JSON — keep the raw text.
+    }
+    throw new Error(message);
   }
   return response.json();
 }
