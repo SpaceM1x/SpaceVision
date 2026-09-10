@@ -17,11 +17,7 @@ class RoadDataProvider:
         self.shp_path = Path(shp_path)
 
     def load(self) -> gpd.GeoDataFrame:
-        """Read the shapefile and return a validated GeoDataFrame.
-
-        Raises :class:`RoadDataError` for a missing file, missing sidecar files,
-        missing CRS or an empty dataset. No CRS is ever guessed.
-        """
+        """Read and validate the shapefile (no CRS guessing)."""
         if not self.shp_path.exists():
             raise RoadDataError(
                 f"Road shapefile not found: {self.shp_path}. "

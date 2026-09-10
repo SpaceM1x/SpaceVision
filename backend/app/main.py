@@ -1,15 +1,4 @@
-"""Unified SpaceVision API.
-
-Combines two modules:
-
-1. **AI mode** — upload satellite imagery, recognise roads with a U-Net
-   (``/uploads``, ``/analytics/summary``, ``/tiles/...``).
-2. **Shape mode** — load roads from an ESRI Shapefile, compute the distance to
-   the nearest road in metres, and combine the SHP road influence
-   ``I(R) = 1 / (1 + R / R0)`` with the ``P_base`` model:
-
-       P_fire = P_base + alpha * I(R) * (1 - P_base)
-"""
+"""SpaceVision API: AI road recognition + SHP fire risk."""
 import logging
 import json
 from datetime import datetime

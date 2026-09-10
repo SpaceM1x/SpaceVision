@@ -1,38 +1,17 @@
-"""Fire probability model (rewritten for real spatial separation).
+"""Fire probability model.
 
-The old additive ``S / 100`` score model is removed. The base probability is now
-built from normalised ``[0, 1]`` factors derived from the OSM context plus a
-small interaction term::
-
-    road_proximity       = exp(-d_road_osm / 1000)
-    settlement_proximity = exp(-d_settlement / 3000)
-
-    P_base = clamp(
-        0.05
-        + 0.18 * road_proximity
-        + 0.20 * settlement_proximity
-        + 0.12 * road_density
-        + 0.08 * settlement_density
-        + 0.15 * season
-        + 0.10 * diurnal
-        + 0.15 * road_proximity * settlement_proximity,
-        0.0, 0.90,
-    )
-
-The SHP road influence is kept separate (``road_influence.I(R)``) and adds at
-most ~15 percentage points::
+P_base combines normalised [0,1] OSM factors (road/settlement proximity,
+densities, season, diurnal, interaction) and is clamped to [0, 0.90]. The SHP
+influence adds up to ~15 p.p.:
 
     P_fire = P_base + alpha * I(R) * (1 - P_base)      # alpha = 0.15
-
-This additive form is algebraically equal to the former
-``1 - (1 - P_base) * (1 - alpha * I(R))``.
 """
 from __future__ import annotations
 
 import math
 from datetime import datetime
 
-# --- Base-model coefficients -----------------------------------------------
+# Base-model coefficients.
 BASE_CONSTANT = 0.05
 ROAD_PROXIMITY_WEIGHT = 0.18
 ROAD_PROXIMITY_SCALE = 1000.0  # metres
@@ -45,7 +24,7 @@ DIURNAL_WEIGHT = 0.10
 INTERACTION_WEIGHT = 0.15
 MAX_BASE_PROBABILITY = 0.90
 
-# Continental-climate monthly risk weights (warm/dry summer is dangerous).
+# Continental-climate monthly risk weights.
 _SEASONAL_WEIGHTS = {
     1: -4.0, 2: -3.0, 3: -1.0, 4: 3.0, 5: 7.0, 6: 10.0,
     7: 11.0, 8: 8.0, 9: 4.0, 10: 1.0, 11: -2.0, 12: -4.0,
@@ -185,13 +164,7 @@ def base_probability_breakdown(
 
 
 def calculate_fire_probability(p_base: float, influence: float, alpha: float) -> float:
-    """Combine ``P_base`` with the SHP road influence ``I(R)``.
-
-    ``P_fire = P_base + alpha * I(R) * (1 - P_base)``.
-
-    All inputs are clamped to ``[0, 1]``, so the result is guaranteed to satisfy
-    ``0 <= P_fire <= 1`` and ``P_fire >= P_base`` for ``alpha >= 0``.
-    """
+    """P_fire = P_base + alpha * I(R) * (1 - P_base)."""
     return calculate_fire_probability_breakdown(p_base, influence, alpha)["p_fire"]
 
 
@@ -216,7 +189,7 @@ def calculate_fire_probability_breakdown(p_base: float, influence: float, alpha:
 
 
 def risk_level_from_probability(probability: float) -> str:
-    """Map a 0..100 percentage to a risk level (legacy thresholds)."""
+    """Map a 0..100 percentage to a risk level."""
     if probability >= 75:
         return "high"
     if probability >= 45:
