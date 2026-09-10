@@ -546,7 +546,12 @@ export default function App() {
       setPointRisk(risk);
       loadRiskHistory();
     } catch (err) {
-      setRiskError(err.message || "Не удалось рассчитать риск.");
+      const aborted = err?.name === "AbortError";
+      setRiskError(
+        aborted
+          ? "Превышено время ожидания ответа. Попробуйте ещё раз."
+          : err.message || "Не удалось рассчитать риск."
+      );
       setPointRisk(null);
     } finally {
       setRiskLoading(false);

@@ -35,7 +35,7 @@ def _no_osm_data() -> dict[str, float | None]:
 def nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
     place_filter = "city|town|village|hamlet|isolated_dwelling"
     query = f"""
-[out:json][timeout:15];
+[out:json][timeout:6];
 (
   way["highway"](around:{radius_m},{lat},{lon});
   node["place"~"{place_filter}"](around:{radius_m},{lat},{lon});
@@ -62,7 +62,7 @@ out center;
             },
         )
         try:
-            with urlopen(request, timeout=8) as response:
+            with urlopen(request, timeout=4) as response:
                 payload_json = json.loads(response.read().decode("utf-8"))
             break
         except (HTTPError, URLError, TimeoutError, ValueError):
