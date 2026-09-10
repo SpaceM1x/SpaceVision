@@ -904,60 +904,84 @@ export default function App() {
                 </div>
               </div>
               {roadsError && <p className="status">{roadsError}</p>}
-              <div className="map">
-                <MapContainer
-                  center={DEFAULT_CENTER}
-                  zoom={DEFAULT_ZOOM}
-                  style={{ height: "100%", width: "100%" }}
-                >
-                  <MapClickHandler onClick={handleMapClick} />
-                  <RoadsFitBounds data={roads} />
-                  {shapeBaseLayer === "scheme" ? (
-                    <TileLayer
-                      attribution="&copy; OpenStreetMap contributors"
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
+              <div className="map-with-explanation">
+                <div className="map">
+                  <MapContainer
+                    center={DEFAULT_CENTER}
+                    zoom={DEFAULT_ZOOM}
+                    style={{ height: "100%", width: "100%" }}
+                  >
+                    <MapClickHandler onClick={handleMapClick} />
+                    <RoadsFitBounds data={roads} />
+                    {shapeBaseLayer === "scheme" ? (
+                      <TileLayer
+                        attribution="&copy; OpenStreetMap contributors"
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                    ) : (
+                      <TileLayer
+                        attribution="Tiles &copy; Esri"
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      />
+                    )}
+                    {roads && (
+                      <GeoJSON data={roads} pathOptions={{ color: "#d97706", weight: 2.5, opacity: 0.9 }} />
+                    )}
+                    {selectedPoint && (
+                      <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
+                        <Popup>
+                          {riskLoading ? (
+                            "Расчёт…"
+                          ) : riskError ? (
+                            riskError
+                          ) : pointRisk ? (
+                            <div>
+                              <strong>
+                                {riskEmoji(pointRisk.risk_level)} {riskLabel(pointRisk.risk_level)} —{" "}
+                                {(pointRisk.fire_probability * 100).toFixed(1)}%
+                              </strong>
+                              <br />
+                              Расстояние до дороги:{" "}
+                              {pointRisk.road_distance_m != null
+                                ? `${pointRisk.road_distance_m.toFixed(0)} м`
+                                : "—"}
+                              <br />
+                              Влияние дороги I(R): {pointRisk.road_influence.toFixed(3)}
+                              <br />
+                              Базовая P_base: {(pointRisk.base_probability * 100).toFixed(1)}%
+                              <br />
+                              Итоговая P_fire: {(pointRisk.fire_probability * 100).toFixed(1)}%
+                            </div>
+                          ) : (
+                            ""
+                          )}
+                        </Popup>
+                      </Marker>
+                    )}
+                  </MapContainer>
+                </div>
+
+                <aside className="explanation-panel">
+                  {riskLoading ? (
+                    <div className="explanation-placeholder">Расчёт…</div>
+                  ) : riskError ? (
+                    <div className="explanation-placeholder error">{riskError}</div>
+                  ) : pointRisk ? (
+                    <>
+                      <div className="explanation-panel-head">
+                        <strong>
+                          {riskEmoji(pointRisk.risk_level)} {riskLabel(pointRisk.risk_level)} —{" "}
+                          {(pointRisk.fire_probability * 100).toFixed(1)}%
+                        </strong>
+                      </div>
+                      <ExplanationView explanation={pointRisk.explanation} />
+                    </>
                   ) : (
-                    <TileLayer
-                      attribution="Tiles &copy; Esri"
-                      url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                    />
+                    <div className="explanation-placeholder">
+                      Кликните по карте, чтобы увидеть подробное объяснение расчёта.
+                    </div>
                   )}
-                  {roads && (
-                    <GeoJSON data={roads} pathOptions={{ color: "#d97706", weight: 2.5, opacity: 0.9 }} />
-                  )}
-                  {selectedPoint && (
-                    <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
-                      <Popup>
-                        {riskLoading ? (
-                          "Расчёт…"
-                        ) : riskError ? (
-                          riskError
-                        ) : pointRisk ? (
-                          <div>
-                            <strong>
-                              {riskEmoji(pointRisk.risk_level)} {riskLabel(pointRisk.risk_level)} —{" "}
-                              {(pointRisk.fire_probability * 100).toFixed(1)}%
-                            </strong>
-                            <br />
-                            Расстояние до дороги:{" "}
-                            {pointRisk.road_distance_m != null
-                              ? `${pointRisk.road_distance_m.toFixed(0)} м`
-                              : "—"}
-                            <br />
-                            Влияние дороги I(R): {pointRisk.road_influence.toFixed(3)}
-                            <br />
-                            Базовая P_base: {(pointRisk.base_probability * 100).toFixed(1)}%
-                            <br />
-                            Итоговая P_fire: {(pointRisk.fire_probability * 100).toFixed(1)}%
-                          </div>
-                        ) : (
-                          ""
-                        )}
-                      </Popup>
-                    </Marker>
-                  )}
-                </MapContainer>
+                </aside>
               </div>
             </section>
           )}

@@ -652,6 +652,50 @@ button:hover {
   margin-top: 10px;
 }
 
+.map-with-explanation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+  margin-top: 10px;
+  align-items: start;
+}
+
+.map-with-explanation .map {
+  margin-top: 0;
+  height: calc(100vh - 220px);
+  min-height: 460px;
+}
+
+.explanation-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--primary-200);
+  border-radius: 12px;
+  padding: 14px;
+  height: calc(100vh - 220px);
+  min-height: 460px;
+  overflow-y: auto;
+  box-shadow: 0 8px 20px rgba(39, 98, 62, 0.08);
+}
+
+.explanation-panel-head {
+  margin-bottom: 12px;
+  color: var(--primary-900);
+  font-size: 15px;
+}
+
+.explanation-placeholder {
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  height: 100%;
+  text-align: center;
+  padding: 16px;
+}
+
+.explanation-placeholder.error {
+  color: #b91c1c;
+}
+
 .user-badge {
   background: #eef8f1;
   border: 1px solid #cfe5d5;
@@ -825,5 +869,19 @@ button:hover {
 
   .map-card .map {
     height: 460px;
+  }
+
+  .map-with-explanation {
+    grid-template-columns: 1fr;
+  }
+
+  .map-with-explanation .map {
+    height: 460px;
+    min-height: 0;
+  }
+
+  .explanation-panel {
+    height: auto;
+    min-height: 0;
   }
 }
