@@ -1,15 +1,15 @@
-"""OSM context lookup used by the legacy ``P_base`` model.
+"""OSM context lookup used by the ``P_base`` model.
 
-This is not part of the ML pipeline; it only queries OpenStreetMap for the
-settlement / road context that the pre-existing rule-based probability model
-consumes. It is kept intact so that the existing ``P_base`` factors are not lost.
+Queries OpenStreetMap (Overpass) for the nearest roads and settlements around a
+point. When no data is available it returns ``None`` distances and zero
+densities — absence of data must not be turned into fake proximity values.
 """
 from __future__ import annotations
 
 import json
 import math
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
@@ -27,47 +27,13 @@ def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return radius * c
 
 
-def _nominatim_fallback_context(lat: float, lon: float) -> dict[str, float | None]:
-    params = urlencode(
-        {
-            "format": "jsonv2",
-            "lat": f"{lat:.7f}",
-            "lon": f"{lon:.7f}",
-            "zoom": "17",
-            "addressdetails": "1",
-        }
-    )
-    endpoint = f"https://nominatim.openstreetmap.org/reverse?{params}"
-    request = Request(
-        endpoint,
-        headers={
-            "User-Agent": "SpaceVision/1.0 (local fire risk prototype)",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urlopen(request, timeout=5) as response:
-            payload_json = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, ValueError):
-        return {
-            "road_distance_m": None,
-            "settlement_distance_m": None,
-            "road_density": 0.0,
-            "settlement_density": 0.0,
-        }
-
-    address = payload_json.get("address", {})
-    has_road = any(key in address for key in {"road", "pedestrian", "footway", "cycleway"})
-    has_settlement = any(
-        key in address
-        for key in {"city", "town", "village", "hamlet", "municipality", "county", "state_district"}
-    )
-
+def _no_osm_data() -> dict[str, float | None]:
+    """Return an honest "no data" context (no fake proximity values)."""
     return {
-        "road_distance_m": 120.0 if has_road else None,
-        "settlement_distance_m": 450.0 if has_settlement else None,
-        "road_density": 0.52 if has_road else 0.0,
-        "settlement_density": 0.58 if has_settlement else 0.0,
+        "road_distance_m": None,
+        "settlement_distance_m": None,
+        "road_density": 0.0,
+        "settlement_density": 0.0,
     }
 
 
@@ -101,7 +67,7 @@ out center;
             continue
 
     if payload_json is None:
-        return _nominatim_fallback_context(lat, lon)
+        return _no_osm_data()
 
     road_distances: list[float] = []
     settlement_distances: list[float] = []
@@ -159,7 +125,7 @@ out center;
     road_density = max(0.0, min(1.0, road_proximity_sum / 2.8))
     settlement_density = max(0.0, min(1.0, settlement_proximity_sum / 1.8))
     if road_distance is None and settlement_distance is None:
-        return _nominatim_fallback_context(lat, lon)
+        return _no_osm_data()
     return {
         "road_distance_m": road_distance,
         "settlement_distance_m": settlement_distance,
