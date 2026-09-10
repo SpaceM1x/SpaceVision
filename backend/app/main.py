@@ -26,7 +26,13 @@ from sqlalchemy.orm import Session
 from .analytics import build_analytics_summary
 from .auth import create_access_token, decode_token, hash_password, verify_password
 from .config import ALPHA, METRIC_CRS, R0_METERS, ROADS_SHP_PATH
-from .database import Base, PREDICTION_DIR, SessionLocal, UPLOAD_DIR, engine, get_db
+from .database import (
+    PREDICTION_DIR,
+    SessionLocal,
+    UPLOAD_DIR,
+    ensure_schema,
+    get_db,
+)
 from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
 from .fire_risk import (
@@ -113,7 +119,7 @@ def configure_access_logging() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     configure_access_logging()
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
     ensure_default_users()
 
 
