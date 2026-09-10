@@ -41,6 +41,56 @@ def _diurnal_component(utc_dt: datetime, lon: float) -> float:
     return -1.0 + afternoon_peak * 5.0
 
 
+def _base_components(
+    *,
+    road_distance_m: float | None,
+    settlement_distance_m: float | None,
+    road_density: float,
+    settlement_density: float,
+    now_utc: datetime,
+    lon: float,
+) -> dict:
+    """Compute every additive component of the legacy ``P_base`` model."""
+    base_score = 14.0
+    road_distance_score = _distance_decay_score(road_distance_m, max_score=28.0, scale_m=2100.0)
+    settlement_distance_score = _distance_decay_score(
+        settlement_distance_m, max_score=24.0, scale_m=6200.0
+    )
+    road_density_score = 16.0 * road_density
+    settlement_density_score = 14.0 * settlement_density
+    season_score = _seasonal_component(now_utc.month)
+    diurnal_score = _diurnal_component(now_utc, lon)
+    data_penalty = -8.0 if (road_distance_m is None and settlement_distance_m is None) else 0.0
+
+    total_score = (
+        base_score
+        + road_distance_score
+        + settlement_distance_score
+        + road_density_score
+        + settlement_density_score
+        + season_score
+        + diurnal_score
+        + data_penalty
+    )
+    return {
+        "base_score": base_score,
+        "road_distance_m": road_distance_m,
+        "road_distance_score": road_distance_score,
+        "settlement_distance_m": settlement_distance_m,
+        "settlement_distance_score": settlement_distance_score,
+        "road_density": road_density,
+        "road_density_score": road_density_score,
+        "settlement_density": settlement_density,
+        "settlement_density_score": settlement_density_score,
+        "season_month": now_utc.month,
+        "season_score": season_score,
+        "diurnal_score": diurnal_score,
+        "data_penalty": data_penalty,
+        "total_score": total_score,
+        "p_base": _clamp01(total_score / 100.0),
+    }
+
+
 def base_probability(
     *,
     road_distance_m: float | None,
@@ -56,28 +106,34 @@ def base_probability(
     settlements + seasonal/daytime factors), unchanged except for normalisation
     from a 0..100 score to a 0..1 probability.
     """
-    base_score = 14.0
-    road_distance_score = _distance_decay_score(road_distance_m, max_score=28.0, scale_m=2100.0)
-    settlement_distance_score = _distance_decay_score(
-        settlement_distance_m, max_score=24.0, scale_m=6200.0
-    )
-    road_density_score = 16.0 * road_density
-    settlement_density_score = 14.0 * settlement_density
-    season_score = _seasonal_component(now_utc.month)
-    diurnal_score = _diurnal_component(now_utc, lon)
-    data_penalty = -8.0 if (road_distance_m is None and settlement_distance_m is None) else 0.0
+    return _base_components(
+        road_distance_m=road_distance_m,
+        settlement_distance_m=settlement_distance_m,
+        road_density=road_density,
+        settlement_density=settlement_density,
+        now_utc=now_utc,
+        lon=lon,
+    )["p_base"]
 
-    probability = (
-        base_score
-        + road_distance_score
-        + settlement_distance_score
-        + road_density_score
-        + settlement_density_score
-        + season_score
-        + diurnal_score
-        + data_penalty
+
+def base_probability_breakdown(
+    *,
+    road_distance_m: float | None,
+    settlement_distance_m: float | None,
+    road_density: float,
+    settlement_density: float,
+    now_utc: datetime,
+    lon: float,
+) -> dict:
+    """Return the full ``P_base`` breakdown (each additive factor + the result)."""
+    return _base_components(
+        road_distance_m=road_distance_m,
+        settlement_distance_m=settlement_distance_m,
+        road_density=road_density,
+        settlement_density=settlement_density,
+        now_utc=now_utc,
+        lon=lon,
     )
-    return _clamp01(probability / 100.0)
 
 
 def calculate_fire_probability(p_base: float, influence: float, alpha: float) -> float:
@@ -88,10 +144,31 @@ def calculate_fire_probability(p_base: float, influence: float, alpha: float) ->
     All inputs are clamped to ``[0, 1]``, so the result is guaranteed to satisfy
     ``0 <= P_fire <= 1`` and ``P_fire >= P_base`` for ``alpha >= 0``.
     """
+    return calculate_fire_probability_breakdown(p_base, influence, alpha)["p_fire"]
+
+
+def calculate_fire_probability_breakdown(p_base: float, influence: float, alpha: float) -> dict:
+    """Return each term of ``P_fire = 1 - (1 - P_base) * (1 - alpha * I(R))``."""
     p_base = _clamp01(p_base)
     influence = _clamp01(influence)
     alpha = _clamp01(alpha)
-    return 1.0 - (1.0 - p_base) * (1.0 - alpha * influence)
+
+    one_minus_p_base = 1.0 - p_base
+    alpha_times_influence = alpha * influence
+    one_minus_alpha_influence = 1.0 - alpha_times_influence
+    product = one_minus_p_base * one_minus_alpha_influence
+    p_fire = 1.0 - product
+
+    return {
+        "p_base": p_base,
+        "influence": influence,
+        "alpha": alpha,
+        "one_minus_p_base": one_minus_p_base,
+        "alpha_times_influence": alpha_times_influence,
+        "one_minus_alpha_influence": one_minus_alpha_influence,
+        "product": product,
+        "p_fire": p_fire,
+    }
 
 
 def risk_level_from_probability(probability: float) -> str:
