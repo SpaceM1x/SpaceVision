@@ -21,7 +21,7 @@ Base = declarative_base()
 
 
 def _default_literal(column) -> str | None:
-    """Return a SQL DEFAULT literal for a column, or ``None`` when unavailable."""
+    """SQL DEFAULT literal for a column, or None."""
     if column.server_default is not None:
         arg = getattr(column.server_default, "arg", None)
         if isinstance(arg, str):
@@ -36,14 +36,7 @@ def _default_literal(column) -> str | None:
 
 
 def ensure_schema() -> None:
-    """Create the persisted schema and migrate existing tables in place.
-
-    The SQLite database lives in a plain file at ``DATA_DIR/app.db``, so its
-    state persists between application restarts. ``create_all`` only creates
-    tables that are missing; for tables that already exist this helper adds any
-    newly introduced mapped columns via ``ALTER TABLE ... ADD COLUMN`` so that
-    schema evolution never requires dropping the existing ``app.db`` file.
-    """
+    """Create missing tables and add missing columns (keeps existing data)."""
     Base.metadata.create_all(bind=engine)
 
     inspector = inspect(engine)

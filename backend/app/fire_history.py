@@ -1,10 +1,4 @@
-"""Persistent history of fire-risk calculations.
-
-Each calculation is stored as a :class:`FireRiskRecord` row. The ``summary``
-field is a short human-readable string shown in the history list; the
-``explanation_json`` field holds the full per-factor breakdown serialised as
-JSON so the UI can expand a row into a detailed explanation.
-"""
+"""Persistent history of fire-risk calculations."""
 from __future__ import annotations
 
 import json

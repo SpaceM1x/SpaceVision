@@ -1,9 +1,4 @@
-"""OSM context lookup used by the ``P_base`` model.
-
-Queries OpenStreetMap (Overpass) for the nearest roads and settlements around a
-point. When no data is available it returns ``None`` distances and zero
-densities — absence of data must not be turned into fake proximity values.
-"""
+"""OSM road/settlement context lookup (Overpass). No data -> None/0."""
 from __future__ import annotations
 
 import json
@@ -28,7 +23,7 @@ def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
 
 
 def _no_osm_data() -> dict[str, float | None]:
-    """Return an honest "no data" context (no fake proximity values)."""
+    """Return an empty context (no fake proximity values)."""
     return {
         "road_distance_m": None,
         "settlement_distance_m": None,
