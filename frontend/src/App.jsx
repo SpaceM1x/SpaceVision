@@ -24,6 +24,7 @@ import {
 } from "react-leaflet";
 import {
   API_URL,
+  clearRoads,
   getAnalyticsSummary,
   getPointRisk,
   getRiskHistory,
@@ -585,6 +586,20 @@ export default function App() {
       setUploadError(err.message || "Ошибка загрузки.");
     } finally {
       setUploadLoading(false);
+    }
+  }
+
+  async function handleClearRoads() {
+    if (!token) return;
+    try {
+      const result = await clearRoads(token);
+      const removed = result.removed || [];
+      setUploadStatus(removed.length ? `Удалено: ${removed.join(", ")}` : "Файлы дорог не найдены.");
+      setUploadError("");
+      setUploadFiles([]);
+      loadRoads();
+    } catch (err) {
+      setUploadError(err.message || "Не удалось очистить дороги.");
     }
   }
 
@@ -1243,6 +1258,14 @@ export default function App() {
                     <p style={{ fontSize: 12, color: "var(--text-muted)", wordBreak: "break-all" }}>
                       {roadsStatus.roads_shp}
                     </p>
+                    <button
+                      type="button"
+                      onClick={handleClearRoads}
+                      disabled={!roadsStatus.uploaded}
+                      style={{ background: "#b91c1c", borderColor: "#b91c1c", marginTop: 8 }}
+                    >
+                      Очистить загруженные SHP
+                    </button>
                   </div>
                 ) : (
                   <p style={{ color: "var(--text-muted)" }}>Загрузка информации…</p>

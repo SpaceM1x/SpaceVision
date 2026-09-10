@@ -232,6 +232,19 @@ async def upload_roads(
     return {"uploaded": saved, "roads_shp": str(ROADS_SHP_PATH)}
 
 
+@app.delete("/roads")
+def clear_roads(current_user: User = Depends(get_current_user)) -> dict:
+    """Delete the uploaded SHP road files."""
+    del current_user
+    removed = []
+    for ext in sorted(ALLOWED_ROAD_EXTENSIONS):
+        candidate = ROADS_SHP_PATH.with_suffix(ext)
+        if candidate.exists():
+            candidate.unlink()
+            removed.append(candidate.name)
+    return {"removed": removed, "uploaded": False}
+
+
 def _risk_level_label(level: str) -> str:
     return {"high": "Высокий", "medium": "Средний", "low": "Низкий"}.get(level, level)
 

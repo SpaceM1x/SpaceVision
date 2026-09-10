@@ -33,29 +33,36 @@ def _no_osm_data() -> dict[str, float | None]:
 
 
 def nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
+    place_filter = "city|town|village|hamlet|isolated_dwelling"
     query = f"""
-[out:json][timeout:5];
+[out:json][timeout:15];
 (
   way["highway"](around:{radius_m},{lat},{lon});
-  node["place"~"city|town|village|hamlet|isolated_dwelling"](around:{radius_m},{lat},{lon});
+  node["place"~"{place_filter}"](around:{radius_m},{lat},{lon});
+  way["place"~"{place_filter}"](around:{radius_m},{lat},{lon});
+  relation["place"~"{place_filter}"](around:{radius_m},{lat},{lon});
 );
 out center;
 """
     payload = f"data={quote(query)}".encode("utf-8")
     payload_json: dict[str, object] | None = None
-    endpoints = ["https://overpass.kumi.systems/api/interpreter"]
+    endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
+    ]
     for endpoint in endpoints:
         request = Request(
             endpoint,
             data=payload,
             headers={
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "User-Agent": "SpaceVision/1.0 (local fire risk prototype)",
+                "User-Agent": "SpaceVision/1.0",
                 "Accept": "application/json",
             },
         )
         try:
-            with urlopen(request, timeout=3) as response:
+            with urlopen(request, timeout=8) as response:
                 payload_json = json.loads(response.read().decode("utf-8"))
             break
         except (HTTPError, URLError, TimeoutError, ValueError):
@@ -95,7 +102,7 @@ out center;
         elem_lat = element.get("lat")
         elem_lon = element.get("lon")
 
-        if element_type == "way":
+        if element_type in ("way", "relation"):
             center = element.get("center", {})
             elem_lat = center.get("lat", elem_lat)
             elem_lon = center.get("lon", elem_lon)

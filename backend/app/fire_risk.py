@@ -2,9 +2,9 @@
 
 P_base combines normalised [0,1] OSM factors (road/settlement proximity,
 densities, season, diurnal, interaction) and is clamped to [0, 0.90]. The SHP
-influence adds up to ~15 p.p.:
+influence adds up to ~30 p.p.:
 
-    P_fire = P_base + alpha * I(R) * (1 - P_base)      # alpha = 0.15
+    P_fire = P_base + alpha * I(R) * (1 - P_base)
 """
 from __future__ import annotations
 

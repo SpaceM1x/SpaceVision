@@ -62,13 +62,21 @@ export async function uploadRoads(formData, token) {
   return parseResponse(response);
 }
 
+export async function clearRoads(token) {
+  const response = await fetchWithTimeout(`${API_URL}/roads`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
 export async function getPointRisk(token, lat, lon) {
   const response = await fetchWithTimeout(
     `${API_URL}/risk/point?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     },
-    9000
+    20000
   );
   return parseResponse(response);
 }
