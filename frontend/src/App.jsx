@@ -392,6 +392,7 @@ export default function App() {
   const [pointRisk, setPointRisk] = useState(null);
   const [riskLoading, setRiskLoading] = useState(false);
   const [riskError, setRiskError] = useState("");
+  const [placingPoint, setPlacingPoint] = useState(false);
   const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
@@ -510,6 +511,7 @@ export default function App() {
     setRoadsStatus(null);
     setSelectedPoint(null);
     setPointRisk(null);
+    setPlacingPoint(false);
     setUploadFiles([]);
     setUploadStatus("");
     setUploadError("");
@@ -533,7 +535,8 @@ export default function App() {
   }
 
   async function handleMapClick(latlng) {
-    if (!latlng || !token) return;
+    if (!latlng || !token || !placingPoint) return;
+    setPlacingPoint(false);
     setSelectedPoint(latlng);
     setRiskLoading(true);
     setRiskError("");
@@ -1046,7 +1049,7 @@ export default function App() {
                 <div>
                   <h2>Карта</h2>
                   <p style={{ margin: 0, color: "var(--text-muted)" }}>
-                    Кликните по карте, чтобы рассчитать вероятность пожара в точке.
+                    Нажмите кнопку-прицел, затем поставьте точку на карте.
                   </p>
                 </div>
                 <div className="layer-switcher">
@@ -1085,6 +1088,10 @@ export default function App() {
                     style={{ height: "100%", width: "100%" }}
                   >
                     <MapClickHandler onClick={handleMapClick} />
+                    <PlacePointControl
+                      active={placingPoint}
+                      onToggle={() => setPlacingPoint((prev) => !prev)}
+                    />
                     <RoadsFitBounds data={roads} />
                     {shapeBaseLayer === "scheme" ? (
                       <TileLayer
@@ -1151,7 +1158,8 @@ export default function App() {
                     </>
                   ) : (
                     <div className="explanation-placeholder">
-                      Кликните по карте, чтобы увидеть подробное объяснение расчёта.
+                      Нажмите кнопку-прицел и поставьте точку, чтобы увидеть подробное
+                      объяснение расчёта.
                     </div>
                   )}
                 </aside>
