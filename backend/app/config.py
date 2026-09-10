@@ -27,8 +27,9 @@ ROADS_SHP_PATH = _resolve_shp_path(os.environ.get("ROADS_SHP_PATH", "gis/roads/r
 # Characteristic influence distance, in metres.
 R0_METERS = float(os.environ.get("R0_METERS", "500.0"))
 
-# Maximum road influence (0..1).
-ALPHA = float(os.environ.get("ALPHA", "0.5"))
+# SHP road-influence weight: P_fire = P_base + ALPHA * I(R) * (1 - P_base).
+# This limits the SHP contribution to at most ~15 percentage points.
+ALPHA = float(os.environ.get("ALPHA", "0.15"))
 
 # --- Metric CRS for distance calculations ---------------------------------
 # When set (e.g. "EPSG:32648"), this CRS is used for the metre-based distance

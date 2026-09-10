@@ -12,7 +12,7 @@ from app.road_influence import road_influence
 
 def test_integration_single_road(single_road_shp):
     r0 = 500.0
-    alpha = 0.5
+    alpha = 0.15
 
     # 1) load SHP
     gdf = RoadDataProvider(single_road_shp).load()
