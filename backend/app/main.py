@@ -245,10 +245,6 @@ def clear_roads(current_user: User = Depends(get_current_user)) -> dict:
     return {"removed": removed, "uploaded": False}
 
 
-def _risk_level_label(level: str) -> str:
-    return {"high": "Высокий", "medium": "Средний", "low": "Низкий"}.get(level, level)
-
-
 def _build_risk_reason(
     p_fire: float,
     p_base: float,
@@ -258,22 +254,21 @@ def _build_risk_reason(
     alpha: float,
 ) -> str:
     percent = p_fire * 100.0
-    level = risk_level_from_probability(percent)
     road_txt = (
         f"ближайшая дорога в {road_distance_m:.0f} м"
         if road_distance_m is not None
         else "нет данных о дорогах (SHP)"
     )
     return (
-        f"Вероятность пожара {percent:.1f}% ({_risk_level_label(level)}). "
+        f"Вероятность пожара {percent:.1f}% в течение года. "
         f"Базовая вероятность {p_base * 100:.1f}%, влияние SHP-дороги {influence:.2f} "
         f"(R0={r0_m:.0f} м, вес={alpha:.2f}), {road_txt}."
     )
 
 
-def _build_risk_summary(lat: float, lon: float, p_fire: float, level: str) -> str:
+def _build_risk_summary(lat: float, lon: float, p_fire: float) -> str:
     return (
-        f"{_risk_level_label(level)} — {(p_fire * 100.0):.1f}% "
+        f"{(p_fire * 100.0):.1f}% в течение года "
         f"(широта {lat:.4f}, долгота {lon:.4f})"
     )
 
@@ -288,7 +283,6 @@ def _build_risk_explanation(
     base: dict,
     fire: dict,
     p_fire: float,
-    level: str,
 ) -> dict:
     """Build a structured, per-factor explanation of one calculation."""
     return {
@@ -368,8 +362,6 @@ def _build_risk_explanation(
                 {"name": "P_fire", "value": fire["p_fire"]},
             ],
         },
-        "risk_level": level,
-        "risk_level_label": _risk_level_label(level),
     }
 
 
@@ -423,9 +415,8 @@ def point_risk(
         base=base,
         fire=fire,
         p_fire=p_fire,
-        level=level,
     )
-    summary = _build_risk_summary(lat, lon, p_fire, level)
+    summary = _build_risk_summary(lat, lon, p_fire)
 
     # Persist the calculation into the history module.
     record_fire_risk(

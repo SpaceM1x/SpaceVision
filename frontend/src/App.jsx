@@ -64,18 +64,6 @@ const modeMenus = [
 const DEFAULT_CENTER = [51.85, 108.27];
 const DEFAULT_ZOOM = 9;
 
-function riskEmoji(level) {
-  if (level === "high") return "🔥";
-  if (level === "medium") return "⚠️";
-  return "🌲";
-}
-
-function riskLabel(level) {
-  if (level === "high") return "Высокий";
-  if (level === "medium") return "Средний";
-  return "Низкий";
-}
-
 function formatDate(value) {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -297,11 +285,10 @@ function ExplanationView({ explanation }) {
         </div>
       )}
 
-      {explanation.risk_level_label && (
-        <div className="explanation-risk">
-          Уровень риска: <strong>{explanation.risk_level_label}</strong>
-        </div>
-      )}
+      <div className="explanation-risk">
+        Вероятность пожара в течение года:{" "}
+        <strong>{(explanation.final.result * 100).toFixed(1)}%</strong>
+      </div>
     </div>
   );
 }
@@ -1137,8 +1124,7 @@ export default function App() {
                           ) : pointRisk ? (
                             <div>
                               <strong>
-                                {riskEmoji(pointRisk.risk_level)} {riskLabel(pointRisk.risk_level)} —{" "}
-                                {(pointRisk.fire_probability * 100).toFixed(1)}%
+                                {(pointRisk.fire_probability * 100).toFixed(1)}% в течение года
                               </strong>
                               <br />
                               Расстояние до дороги:{" "}
@@ -1170,8 +1156,7 @@ export default function App() {
                     <>
                       <div className="explanation-panel-head">
                         <strong>
-                          {riskEmoji(pointRisk.risk_level)} {riskLabel(pointRisk.risk_level)} —{" "}
-                          {(pointRisk.fire_probability * 100).toFixed(1)}%
+                          {(pointRisk.fire_probability * 100).toFixed(1)}% в течение года
                         </strong>
                       </div>
                       <ExplanationView explanation={pointRisk.explanation} />
