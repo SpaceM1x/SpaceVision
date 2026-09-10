@@ -203,6 +203,35 @@ body {
   background: rgba(255, 255, 255, 0.14);
 }
 
+.menu-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #ebf6ff;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 13px 16px;
+  cursor: pointer;
+  font-size: 15px;
+  gap: 8px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.menu-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menu-link.active {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.sidebar.collapsed .menu-link {
+  justify-content: center;
+  padding: 13px 0;
+}
+
 .mode-chevron {
   transition: transform 0.18s ease;
   flex-shrink: 0;
@@ -302,6 +331,17 @@ button:hover {
   background: var(--primary-100);
   border: 1px solid var(--primary-300);
   color: var(--primary-900);
+}
+
+.roads-hint p {
+  margin: 0 0 6px;
+}
+
+.roads-hint .roads-hint-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+  word-break: break-all;
+  margin-bottom: 10px;
 }
 
 .content {
