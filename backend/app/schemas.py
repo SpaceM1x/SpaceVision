@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -29,6 +30,10 @@ class PointRiskOut(BaseModel):
     fire_probability: float
     risk_level: str
     risk_reason: str
+    # Short human-readable summary stored in the history list.
+    summary: str | None = None
+    # Full per-factor breakdown (equation elements + their values).
+    explanation: dict[str, Any] | None = None
 
 
 class UploadOut(BaseModel):
@@ -78,3 +83,18 @@ class AnalyticsSummaryOut(BaseModel):
     average_component_count: float
     timeline: list[AnalyticsPointOut]
     items: list[UploadAnalyticsOut]
+
+
+class FireRiskRecordOut(BaseModel):
+    id: int
+    username: str
+    lat: float
+    lon: float
+    fire_probability: float
+    risk_level: str
+    summary: str
+    explanation: dict[str, Any]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -25,6 +25,7 @@ import {
   API_URL,
   getAnalyticsSummary,
   getPointRisk,
+  getRiskHistory,
   getRoads,
   getRoadsStatus,
   getUploads,
@@ -53,6 +54,7 @@ const modeMenus = [
     items: [
       { key: "shape-maps", label: "Карта риска", icon: MapIcon },
       { key: "shape-upload", label: "Загрузка SHP", icon: Upload },
+      { key: "shape-history", label: "История расчётов", icon: History },
       { key: "profile", label: "Личный кабинет", icon: UserRound },
     ],
   },
@@ -151,6 +153,116 @@ function TrendChart({ points }) {
   );
 }
 
+function formatVal(value) {
+  if (value == null) return "—";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "—";
+    if (Math.abs(value) >= 100) return value.toFixed(0);
+    if (Math.abs(value) >= 1) return value.toFixed(2);
+    return value.toFixed(4);
+  }
+  return String(value);
+}
+
+function ExplanationView({ explanation }) {
+  if (!explanation) return null;
+  const base = explanation.base;
+  const road = explanation.road;
+  const finalBlock = explanation.final;
+
+  return (
+    <div className="explanation">
+      <div className="explanation-equation">{explanation.equation}</div>
+      {explanation.coordinates && (
+        <div className="explanation-coords">
+          Широта {explanation.coordinates.lat?.toFixed(4)}, долгота{" "}
+          {explanation.coordinates.lon?.toFixed(4)}
+        </div>
+      )}
+
+      {base && (
+        <div className="explanation-block">
+          <div className="explanation-block-head">
+            <strong>{base.label}</strong>
+            <span>{base.formula}</span>
+            <em>{(base.result * 100).toFixed(2)}%</em>
+          </div>
+          <table className="explanation-factors">
+            <tbody>
+              {base.factors.map((factor, index) => (
+                <tr key={index}>
+                  <td>{factor.name}</td>
+                  <td>
+                    {factor.input != null ? `${formatVal(factor.input)} → ` : ""}
+                    {formatVal(factor.value)}
+                  </td>
+                  <td className="muted">{factor.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {road && (
+        <div className="explanation-block">
+          <div className="explanation-block-head">
+            <strong>{road.label}</strong>
+            <span>{road.formula}</span>
+            <em>{formatVal(road.result)}</em>
+          </div>
+          <div className="explanation-kv">
+            <span>
+              R (до дороги):{" "}
+              {road.R != null ? `${road.R.toFixed(0)} м` : "—"}
+            </span>
+            <span>R0: {road.R0.toFixed(0)} м</span>
+            <span>α: {road.alpha.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      {finalBlock && (
+        <div className="explanation-block">
+          <div className="explanation-block-head">
+            <strong>{finalBlock.label}</strong>
+            <span>{finalBlock.formula}</span>
+            <em>{(finalBlock.result * 100).toFixed(2)}%</em>
+          </div>
+          <table className="explanation-factors">
+            <tbody>
+              {finalBlock.terms.map((term, index) => (
+                <tr key={index}>
+                  <td>{term.name}</td>
+                  <td>{formatVal(term.value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {explanation.risk_level_label && (
+        <div className="explanation-risk">
+          Уровень риска: <strong>{explanation.risk_level_label}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskHistoryItem({ record, expanded, onToggle }) {
+  return (
+    <div className="risk-history-item">
+      <button className="risk-history-summary" onClick={onToggle}>
+        <span>{record.summary}</span>
+        <span className="risk-history-date">{formatDate(record.created_at)}</span>
+      </button>
+      {expanded && <ExplanationView explanation={record.explanation} />}
+    </div>
+  );
+}
+
 function LoginScreen({ onSubmit }) {
   const [credentials, setCredentials] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
@@ -226,6 +338,8 @@ export default function App() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [riskHistory, setRiskHistory] = useState([]);
+  const [expandedRiskId, setExpandedRiskId] = useState(null);
 
   const canUpload = Boolean(token);
 
@@ -295,10 +409,24 @@ export default function App() {
     }
   }
 
+  async function loadRiskHistory() {
+    if (!token) {
+      setRiskHistory([]);
+      return;
+    }
+    try {
+      const history = await getRiskHistory(token);
+      setRiskHistory(Array.isArray(history) ? history : []);
+    } catch {
+      setRiskHistory([]);
+    }
+  }
+
   useEffect(() => {
     loadRoads();
     loadUploads();
     loadAnalytics();
+    loadRiskHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -350,6 +478,7 @@ export default function App() {
     try {
       const risk = await getPointRisk(token, latlng.lat, latlng.lng);
       setPointRisk(risk);
+      loadRiskHistory();
     } catch (err) {
       setRiskError(err.message || "Не удалось рассчитать риск.");
       setPointRisk(null);
@@ -830,6 +959,30 @@ export default function App() {
                   )}
                 </MapContainer>
               </div>
+            </section>
+          )}
+
+          {activeTab === "shape-history" && (
+            <section className="card">
+              <h2>История расчётов вероятности пожара</h2>
+              {riskHistory.length === 0 ? (
+                <p className="chart-empty">
+                  Расчётов пока нет. Кликните по карте в разделе «Карта риска».
+                </p>
+              ) : (
+                <div className="risk-history">
+                  {riskHistory.map((record) => (
+                    <RiskHistoryItem
+                      key={record.id}
+                      record={record}
+                      expanded={expandedRiskId === record.id}
+                      onToggle={() =>
+                        setExpandedRiskId((prev) => (prev === record.id ? null : record.id))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
