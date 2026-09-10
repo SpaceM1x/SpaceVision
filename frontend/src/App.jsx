@@ -44,7 +44,6 @@ const modeMenus = [
       { key: "ai-upload", label: "Загрузка космоснимков", icon: Upload },
       { key: "ai-statistics", label: "Статистика", icon: BarChart3 },
       { key: "ai-history", label: "История загрузок", icon: History },
-      { key: "profile", label: "Личный кабинет", icon: UserRound },
     ],
   },
   {
@@ -55,7 +54,6 @@ const modeMenus = [
       { key: "shape-maps", label: "Карта риска", icon: MapIcon },
       { key: "shape-upload", label: "Загрузка SHP", icon: Upload },
       { key: "shape-history", label: "История расчётов", icon: History },
-      { key: "profile", label: "Личный кабинет", icon: UserRound },
     ],
   },
 ];
@@ -605,6 +603,16 @@ export default function App() {
               </div>
             );
           })}
+
+          <button
+            className={activeTab === "profile" ? "menu-link active" : "menu-link"}
+            onClick={() => setActiveTab("profile")}
+          >
+            <span className="menu-left">
+              <UserRound size={18} />
+              {!sidebarCollapsed && <span className="menu-label">Личный кабинет</span>}
+            </span>
+          </button>
         </nav>
       </aside>
 
@@ -903,7 +911,19 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              {roadsError && <p className="status">{roadsError}</p>}
+              {roadsError && (
+                <div className="status roads-hint">
+                  <p>
+                    <strong>Дороги ещё не загружены.</strong> Чтобы рассчитывать
+                    вероятность пожара, загрузите shapefile (.shp, .shx, .dbf, .prj) в
+                    разделе «Загрузка SHP».
+                  </p>
+                  <p className="roads-hint-detail">{roadsError}</p>
+                  <button onClick={() => setActiveTab("shape-upload")}>
+                    Перейти к загрузке SHP
+                  </button>
+                </div>
+              )}
               <div className="map-with-explanation">
                 <div className="map">
                   <MapContainer
