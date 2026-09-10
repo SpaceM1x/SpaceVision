@@ -684,6 +684,48 @@ button:hover {
   color: #ffffff;
 }
 
+.place-point-control {
+  clear: both;
+}
+
+.place-point-control .place-point-button {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #333333;
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.place-point-control .place-point-button:hover {
+  background: #f4f4f4;
+}
+
+.place-point-control .place-point-button.active {
+  background: var(--primary-700);
+  color: #ffffff;
+}
+
+.ai-answer-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-answer-placeholder p {
+  margin: 0 0 8px;
+  color: var(--text-main);
+}
+
+.ai-answer-risk {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary-900);
+}
+
 .map-card .map {
   width: 100%;
   height: calc(100vh - 220px);
