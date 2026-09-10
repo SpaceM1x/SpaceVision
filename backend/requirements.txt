@@ -6,3 +6,11 @@ pyjwt
 geopandas
 shapely
 pyproj
+# AI road-recognition pipeline (optional at startup, required for /uploads)
+torch
+torchvision
+segmentation-models-pytorch
+albumentations
+opencv-python-headless
+numpy
+Pillow

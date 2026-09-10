@@ -1,24 +1,32 @@
-"""Zaigraevsky district fire-risk API — no-ML version.
+"""Unified SpaceVision API.
 
-Roads are loaded from an ESRI Shapefile (no neural network), the distance to the
-nearest road is computed in metres in a metric CRS, and the road influence
-``I(R) = 1 / (1 + R / R0)`` is combined with the legacy ``P_base`` model:
+Combines two modules:
 
-    P_fire = 1 - (1 - P_base) * (1 - alpha * I(R))
+1. **AI mode** — upload satellite imagery, recognise roads with a U-Net
+   (``/uploads``, ``/analytics/summary``, ``/tiles/...``).
+2. **Shape mode** — load roads from an ESRI Shapefile, compute the distance to
+   the nearest road in metres, and combine the road influence
+   ``I(R) = 1 / (1 + R / R0)`` with the legacy ``P_base`` model:
+
+       P_fire = 1 - (1 - P_base) * (1 - alpha * I(R))
 """
+import logging
 import json
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pyproj import Transformer
 from shapely.geometry import Point
 from sqlalchemy.orm import Session
 
+from .analytics import build_analytics_summary
 from .auth import create_access_token, decode_token, hash_password, verify_password
 from .config import ALPHA, METRIC_CRS, R0_METERS, ROADS_SHP_PATH
-from .database import Base, SessionLocal, engine, get_db
+from .database import Base, PREDICTION_DIR, SessionLocal, UPLOAD_DIR, engine, get_db
 from .distance import distance_to_nearest_road
 from .fire_risk import (
     base_probability,
@@ -26,13 +34,19 @@ from .fire_risk import (
     risk_level_from_probability,
 )
 from .gis import select_metric_crs, to_metric
-from .models import User
+from .models import Upload, User
 from .osm import nearest_distances_from_osm
 from .road_data import RoadDataError, RoadDataProvider
 from .road_influence import road_influence
-from .schemas import LoginRequest, LoginResponse, PointRiskOut
+from .schemas import (
+    AnalyticsSummaryOut,
+    LoginRequest,
+    LoginResponse,
+    PointRiskOut,
+    UploadOut,
+)
 
-app = FastAPI(title="Zaigraevsky Fire Risk API (no-ML)")
+app = FastAPI(title="SpaceVision API (AI + SHP)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,8 +66,51 @@ app.add_middleware(
 )
 
 
+def _prediction_paths(upload: Upload) -> tuple[Path, Path]:
+    stem = Path(upload.file_path).stem
+    return (
+        PREDICTION_DIR / f"{stem}_mask.png",
+        PREDICTION_DIR / f"{stem}_overlay.png",
+    )
+
+
+def serialize_upload(upload: Upload) -> UploadOut:
+    mask_path, overlay_path = _prediction_paths(upload)
+    mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
+    overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
+    return UploadOut(
+        id=upload.id,
+        title=upload.title,
+        tile_z=upload.tile_z,
+        tile_x=upload.tile_x,
+        tile_y=upload.tile_y,
+        uploaded_by=upload.uploaded_by,
+        created_at=upload.created_at,
+        mask_url=mask_url,
+        overlay_url=overlay_url,
+    )
+
+
+class IgnoreMissingTileAccessLog(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        is_tiles_request = "/tiles/" in message
+        is_not_found = " 404 " in message or " 404 Not Found" in message
+        return not (is_tiles_request and is_not_found)
+
+
+def configure_access_logging() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(
+        isinstance(log_filter, IgnoreMissingTileAccessLog)
+        for log_filter in access_logger.filters
+    ):
+        access_logger.addFilter(IgnoreMissingTileAccessLog())
+
+
 @app.on_event("startup")
 def on_startup() -> None:
+    configure_access_logging()
     Base.metadata.create_all(bind=engine)
     ensure_default_users()
 
@@ -250,4 +307,112 @@ def point_risk(
         risk_level=risk_level_from_probability(p_fire * 100.0),
         risk_reason=_build_risk_reason(p_fire, p_base, influence, r, R0_METERS, ALPHA),
     )
+
+@app.post("/uploads", response_model=UploadOut)
+async def create_upload(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    tile_z: str = Form(default=""),
+    tile_x: str = Form(default=""),
+    tile_y: str = Form(default=""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    def parse_tile_value(raw_value: str, field_name: str) -> int:
+        value = (raw_value or "").strip()
+        if value == "":
+            return 0
+        try:
+            return int(value)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400, detail=f"Неверное значение {field_name}: {raw_value}"
+            ) from error
+
+    parsed_tile_z = parse_tile_value(tile_z, "tile_z")
+    parsed_tile_x = parse_tile_value(tile_x, "tile_x")
+    parsed_tile_y = parse_tile_value(tile_y, "tile_y")
+
+    extension = Path(file.filename).suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg"}:
+        raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG.")
+    filename = f"{uuid4().hex}{extension}"
+    destination = UPLOAD_DIR / filename
+    content = await file.read()
+    destination.write_bytes(content)
+    try:
+        # Imported lazily so the app still starts without the heavy AI stack.
+        from .road_inference import run_road_segmentation
+
+        run_road_segmentation(destination, PREDICTION_DIR)
+    except Exception as error:
+        if destination.exists():
+            destination.unlink()
+        raise HTTPException(status_code=500, detail=f"Ошибка инференса дорог: {error}") from error
+
+    upload = Upload(
+        title=title,
+        file_path=str(destination),
+        tile_z=parsed_tile_z,
+        tile_x=parsed_tile_x,
+        tile_y=parsed_tile_y,
+        uploaded_by=current_user.username,
+    )
+    db.add(upload)
+    db.commit()
+    db.refresh(upload)
+    return serialize_upload(upload)
+
+
+@app.get("/uploads", response_model=list[UploadOut])
+def list_uploads(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    del current_user
+    items = db.query(Upload).order_by(Upload.created_at.desc()).all()
+    return [serialize_upload(item) for item in items]
+
+
+@app.get("/analytics/summary", response_model=AnalyticsSummaryOut)
+def analytics_summary(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    del current_user
+    items = db.query(Upload).order_by(Upload.created_at.desc()).all()
+    return build_analytics_summary(items, PREDICTION_DIR)
+
+
+@app.get("/uploads/{upload_id}/mask")
+def get_upload_mask(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    mask_path, _ = _prediction_paths(upload)
+    if not mask_path.exists():
+        raise HTTPException(status_code=404, detail="Mask not found")
+    return FileResponse(mask_path)
+
+
+@app.get("/uploads/{upload_id}/overlay")
+def get_upload_overlay(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    _, overlay_path = _prediction_paths(upload)
+    if not overlay_path.exists():
+        raise HTTPException(status_code=404, detail="Overlay not found")
+    return FileResponse(overlay_path)
+
+
+@app.get("/tiles/{z}/{x}/{y}")
+def get_tile(z: int, x: int, y: int, db: Session = Depends(get_db)):
+    tile = (
+        db.query(Upload)
+        .filter(Upload.tile_z == z, Upload.tile_x == x, Upload.tile_y == y)
+        .order_by(Upload.created_at.desc())
+        .first()
+    )
+    if not tile:
+        raise HTTPException(status_code=404, detail="Tile not found")
+    return FileResponse(tile.file_path)
 
