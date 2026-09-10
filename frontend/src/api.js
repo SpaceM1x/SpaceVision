@@ -62,4 +62,27 @@ export async function getPointRisk(token, lat, lon) {
   return parseResponse(response);
 }
 
+export async function getUploads(token) {
+  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
+export async function uploadTile(formData, token) {
+  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  return parseResponse(response);
+}
+
+export async function getAnalyticsSummary(token) {
+  const response = await fetchWithTimeout(`${API_URL}/analytics/summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
 export { API_URL };
