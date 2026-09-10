@@ -18,7 +18,7 @@ ROADS_SHP_PATH = _resolve_shp_path(os.environ.get("ROADS_SHP_PATH", "gis/roads/r
 
 # SHP road influence: characteristic distance (m) and weight.
 R0_METERS = float(os.environ.get("R0_METERS", "500.0"))
-ALPHA = float(os.environ.get("ALPHA", "0.15"))
+ALPHA = float(os.environ.get("ALPHA", "0.30"))
 
 # Metric CRS for distance calculations; empty -> derive UTM zone automatically.
 METRIC_CRS = os.environ.get("METRIC_CRS", "").strip() or None
