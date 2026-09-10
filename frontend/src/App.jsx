@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
   BarChart3,
   BrainCircuit,
   ChevronDown,
+  FileText,
   History,
   Layers,
   LayoutDashboard,
@@ -42,6 +43,7 @@ const modeMenus = [
     items: [
       { key: "ai-maps", label: "Карта космоснимков", icon: MapIcon },
       { key: "ai-upload", label: "Загрузка космоснимков", icon: Upload },
+      { key: "ai-documents", label: "Загрузка документов", icon: FileText },
       { key: "ai-statistics", label: "Статистика", icon: BarChart3 },
       { key: "ai-history", label: "История загрузок", icon: History },
     ],
@@ -92,6 +94,60 @@ function RoadsFitBounds({ data }) {
     const bounds = L.geoJSON(data).getBounds();
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
   }, [data, map]);
+  return null;
+}
+
+const PLACE_POINT_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>';
+
+function PlacePointControl({ active, onToggle }) {
+  const map = useMap();
+  const buttonRef = useRef(null);
+  const onToggleRef = useRef(onToggle);
+  onToggleRef.current = onToggle;
+
+  useEffect(() => {
+    const Control = L.Control.extend({
+      options: { position: "topleft" },
+      onAdd() {
+        const container = L.DomUtil.create(
+          "div",
+          "leaflet-control leaflet-bar place-point-control"
+        );
+        const button = L.DomUtil.create("a", "place-point-button");
+        button.href = "#";
+        button.title = "Поставить точку для расчёта";
+        button.setAttribute("role", "button");
+        button.setAttribute("aria-label", "Поставить точку для расчёта");
+        button.innerHTML = PLACE_POINT_ICON;
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+        L.DomEvent.on(button, "click", (event) => {
+          L.DomEvent.preventDefault(event);
+          L.DomEvent.stopPropagation(event);
+          onToggleRef.current();
+        });
+        buttonRef.current = button;
+        container.appendChild(button);
+        return container;
+      },
+    });
+    const control = new Control();
+    map.addControl(control);
+    return () => {
+      map.removeControl(control);
+      buttonRef.current = null;
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (!buttonRef.current) return;
+    buttonRef.current.classList.toggle("active", active);
+    buttonRef.current.title = active
+      ? "Режим установки точки включён — кликните по карте"
+      : "Поставить точку для расчёта";
+  }, [active]);
+
   return null;
 }
 
@@ -323,6 +379,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [aiPlacingPoint, setAiPlacingPoint] = useState(false);
+  const [aiPoint, setAiPoint] = useState(null);
+  const [docFiles, setDocFiles] = useState([]);
+  const [docStatus, setDocStatus] = useState("");
 
   const [shapeBaseLayer, setShapeBaseLayer] = useState("scheme");
   const [roads, setRoads] = useState(null);
@@ -457,6 +517,10 @@ export default function App() {
     setAnalytics(null);
     setAiStatus("");
     setFile(null);
+    setAiPoint(null);
+    setAiPlacingPoint(false);
+    setDocFiles([]);
+    setDocStatus("");
   }
 
   function handleModeClick(modeKey) {
@@ -483,6 +547,22 @@ export default function App() {
     } finally {
       setRiskLoading(false);
     }
+  }
+
+  function handleAiMapClick(latlng) {
+    if (!latlng || !aiPlacingPoint) return;
+    setAiPoint({ lat: latlng.lat, lng: latlng.lng });
+    setAiPlacingPoint(false);
+  }
+
+  function handleDocUpload(event) {
+    event.preventDefault();
+    if (!docFiles.length) {
+      setDocStatus("Выберите файлы документов.");
+      return;
+    }
+    setDocStatus("Заготовка: загрузка документов будет подключена позже.");
+    setDocFiles([]);
   }
 
   async function handleUploadSHP(event) {
@@ -635,7 +715,7 @@ export default function App() {
                 <div>
                   <h2>Карта космоснимков</h2>
                   <p style={{ margin: 0, color: "var(--text-muted)" }}>
-                    Загруженные тайлы отображаются поверх базовой подложки.
+                    Нажмите кнопку-прицел и поставьте точку, чтобы получить оценку риска от ИИ.
                   </p>
                 </div>
                 <div className="layer-switcher">
@@ -653,25 +733,64 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              <div className="map">
-                <MapContainer
-                  center={DEFAULT_CENTER}
-                  zoom={DEFAULT_ZOOM}
-                  style={{ height: "100%", width: "100%" }}
-                >
-                  {aiBaseLayer === "scheme" ? (
-                    <TileLayer
-                      attribution="&copy; OpenStreetMap contributors"
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              <div className="map-with-explanation">
+                <div className="map">
+                  <MapContainer
+                    center={DEFAULT_CENTER}
+                    zoom={DEFAULT_ZOOM}
+                    style={{ height: "100%", width: "100%" }}
+                  >
+                    <MapClickHandler onClick={handleAiMapClick} />
+                    <PlacePointControl
+                      active={aiPlacingPoint}
+                      onToggle={() => setAiPlacingPoint((prev) => !prev)}
                     />
+                    {aiBaseLayer === "scheme" ? (
+                      <TileLayer
+                        attribution="&copy; OpenStreetMap contributors"
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                    ) : (
+                      <TileLayer
+                        attribution="Tiles &copy; Esri"
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      />
+                    )}
+                    <TileLayer url={`${API_URL}/tiles/{z}/{x}/{y}`} opacity={0.75} />
+                    {aiPoint && (
+                      <Marker position={[aiPoint.lat, aiPoint.lng]}>
+                        <Popup>
+                          Точка для расчёта риска (ИИ): {aiPoint.lat.toFixed(4)},{" "}
+                          {aiPoint.lng.toFixed(4)}
+                        </Popup>
+                      </Marker>
+                    )}
+                  </MapContainer>
+                </div>
+
+                <aside className="explanation-panel ai-answer-panel">
+                  {aiPoint ? (
+                    <>
+                      <div className="explanation-panel-head">
+                        <strong>Ответ ИИ</strong>
+                      </div>
+                      <div className="ai-answer-placeholder">
+                        <p>
+                          Точка: {aiPoint.lat.toFixed(4)}, {aiPoint.lng.toFixed(4)}
+                        </p>
+                        <p className="ai-answer-risk">Риск: — %</p>
+                        <p>
+                          Здесь появится объяснение процента риска на основе исторических
+                          документов, когда модель ИИ будет обучена и подключена.
+                        </p>
+                      </div>
+                    </>
                   ) : (
-                    <TileLayer
-                      attribution="Tiles &copy; Esri"
-                      url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                    />
+                    <div className="explanation-placeholder">
+                      Поставьте точку на карте, чтобы получить ответ ИИ.
+                    </div>
                   )}
-                  <TileLayer url={`${API_URL}/tiles/{z}/{x}/{y}`} opacity={0.75} />
-                </MapContainer>
+                </aside>
               </div>
             </section>
           )}
@@ -721,6 +840,40 @@ export default function App() {
                   </button>
                 </form>
                 {aiStatus && <p className="status">{aiStatus}</p>}
+              </article>
+            </section>
+          )}
+
+          {activeTab === "ai-documents" && (
+            <section className="grid">
+              <article className="card">
+                <h2>Загрузка документов</h2>
+                <p style={{ color: "var(--text-muted)" }}>
+                  Заготовка модуля. Здесь будет загрузка исторических документов, которые ИИ
+                  использует для объяснения процента риска.
+                </p>
+                <form onSubmit={handleDocUpload} className="upload-form">
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.txt,.md,.json,.csv"
+                    onChange={(event) => setDocFiles(Array.from(event.target.files || []))}
+                  />
+                  {docFiles.length > 0 && (
+                    <div className="history">
+                      {docFiles.map((fileItem, index) => (
+                        <div className="history-item" key={index}>
+                          <strong>{fileItem.name}</strong>
+                          <span>{(fileItem.size / 1024).toFixed(1)} КБ</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button type="submit" disabled={docFiles.length === 0}>
+                    Загрузить
+                  </button>
+                </form>
+                {docStatus && <p className="status">{docStatus}</p>}
               </article>
             </section>
           )}
