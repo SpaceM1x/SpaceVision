@@ -3,9 +3,41 @@ from __future__ import annotations
 
 import json
 import math
+import threading
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+# In-memory TTL cache for Overpass results so repeated /risk/point calls for the
+# same location/radius within the window skip the (slow, rate-limited) HTTP call.
+_OSM_CACHE_TTL_SECONDS = 60.0
+_OSM_CACHE_MAX_ENTRIES = 256
+_osm_cache_lock = threading.Lock()
+_osm_query_cache: dict[tuple, tuple[float, dict[str, float | None]]] = {}
+
+
+def _osm_cache_lookup(key: tuple) -> dict[str, float | None] | None:
+    with _osm_cache_lock:
+        entry = _osm_query_cache.get(key)
+        if entry and (time.monotonic() - entry[0]) < _OSM_CACHE_TTL_SECONDS:
+            return entry[1]
+        _osm_query_cache.pop(key, None)
+    return None
+
+
+def _osm_cache_store(key: tuple, value: dict[str, float | None]) -> None:
+    with _osm_cache_lock:
+        if len(_osm_query_cache) >= _OSM_CACHE_MAX_ENTRIES:
+            oldest_key = min(_osm_query_cache, key=lambda k: _osm_query_cache[k][0])
+            _osm_query_cache.pop(oldest_key, None)
+        _osm_query_cache[key] = (time.monotonic(), value)
+
+
+def invalidate_osm_cache() -> None:
+    """Drop all cached OSM results (e.g. on demand or in tests)."""
+    with _osm_cache_lock:
+        _osm_query_cache.clear()
 
 
 def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -32,7 +64,7 @@ def _no_osm_data() -> dict[str, float | None]:
     }
 
 
-def nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
+def _compute_nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
     place_filter = "city|town|village|hamlet|isolated_dwelling"
     query = f"""
 [out:json][timeout:6];
@@ -134,3 +166,14 @@ out center;
         "road_density": road_density,
         "settlement_density": settlement_density,
     }
+
+
+def nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
+    """OSM context lookup with a ~60s in-memory cache per (location, radius)."""
+    key = (round(float(lat), 5), round(float(lon), 5), int(radius_m))
+    cached = _osm_cache_lookup(key)
+    if cached is not None:
+        return cached
+    result = _compute_nearest_distances_from_osm(lat, lon, radius_m)
+    _osm_cache_store(key, result)
+    return result

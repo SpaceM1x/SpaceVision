@@ -404,7 +404,7 @@ def point_risk(
     x, y = transformer.transform(lon, lat)
     point_metric = Point(x, y)
 
-    r = distance_to_nearest_road(point_metric, roads_metric)
+    r = distance_to_nearest_road(point_metric, roads_metric, cache.tree)
     influence = road_influence(r, R0_METERS)
 
     # P_base model (OSM road/settlement context + seasonal/daytime factors).
