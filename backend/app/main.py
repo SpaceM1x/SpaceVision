@@ -32,7 +32,13 @@ from .fire_risk import (
 from .gis import select_metric_crs, to_metric
 from .models import Upload, User
 from .osm import nearest_distances_from_osm
-from .road_data import RoadDataError, RoadDataProvider
+from .road_data import (
+    RoadDataError,
+    RoadDataProvider,
+    build_roads_cache,
+    get_roads_cache,
+    invalidate_roads_cache,
+)
 from .road_influence import road_influence
 from .schemas import (
     AnalyticsSummaryOut,
@@ -171,10 +177,12 @@ def roads_geojson(current_user: User = Depends(get_current_user)) -> dict:
     """Return the SHP roads as a WGS84 GeoJSON FeatureCollection."""
     del current_user
     try:
-        gdf = RoadDataProvider(ROADS_SHP_PATH).load()
+        cache = get_roads_cache()
+        if cache is None:
+            cache = build_roads_cache(ROADS_SHP_PATH, METRIC_CRS)
     except RoadDataError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
-    return json.loads(gdf.to_crs("EPSG:4326").to_json())
+    return json.loads(cache.gdf.to_crs("EPSG:4326").to_json())
 
 
 ALLOWED_ROAD_EXTENSIONS = {".shp", ".shx", ".dbf", ".prj", ".cpg"}
@@ -229,6 +237,12 @@ async def upload_roads(
             detail="Отсутствует файл .prj — он обязателен (содержит CRS).",
         )
 
+    # Refresh the in-memory road cache now that the SHP has been replaced.
+    try:
+        build_roads_cache(ROADS_SHP_PATH, METRIC_CRS)
+    except RoadDataError:
+        invalidate_roads_cache()
+
     return {"uploaded": saved, "roads_shp": str(ROADS_SHP_PATH)}
 
 
@@ -242,6 +256,7 @@ def clear_roads(current_user: User = Depends(get_current_user)) -> dict:
         if candidate.exists():
             candidate.unlink()
             removed.append(candidate.name)
+    invalidate_roads_cache()
     return {"removed": removed, "uploaded": False}
 
 
@@ -376,12 +391,14 @@ def point_risk(
         raise HTTPException(status_code=400, detail="Некорректные координаты.")
 
     try:
-        gdf = RoadDataProvider(ROADS_SHP_PATH).load()
+        cache = get_roads_cache()
+        if cache is None:
+            cache = build_roads_cache(ROADS_SHP_PATH, METRIC_CRS)
     except RoadDataError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
-    metric_crs = select_metric_crs(gdf, METRIC_CRS)
-    roads_metric = to_metric(gdf, metric_crs)
+    metric_crs = cache.metric_crs
+    roads_metric = cache.roads_metric
 
     transformer = Transformer.from_crs("EPSG:4326", metric_crs, always_xy=True)
     x, y = transformer.transform(lon, lat)
