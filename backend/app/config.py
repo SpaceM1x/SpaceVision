@@ -16,6 +16,12 @@ def _resolve_shp_path(raw: str) -> Path:
 
 ROADS_SHP_PATH = _resolve_shp_path(os.environ.get("ROADS_SHP_PATH", "gis/roads/roads.shp"))
 
+# Optional settlements layer for the distance-decay model.  When the file is
+# absent, the API falls back to OSM settlements.
+SETTLEMENTS_SHP_PATH = _resolve_shp_path(
+    os.environ.get("SETTLEMENTS_SHP_PATH", "gis/settlements/settlements.shp")
+)
+
 # SHP road influence: characteristic distance (m). The weight is part of the
 # logistic model coefficients in ``fire_risk``.
 R0_METERS = float(os.environ.get("R0_METERS", "500.0"))

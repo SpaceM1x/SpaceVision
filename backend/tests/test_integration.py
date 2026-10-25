@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 from pyproj import Transformer
 from shapely.geometry import Point
 
@@ -218,4 +219,62 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     )
     assert ai_without_shp.status_code == 200, ai_without_shp.text
     assert ai_without_shp.json()["road_distance_m"] is None
+
+    # Range method: OSM fallback provides both distances, the new model
+    # returns all three scenarios and persists the base scenario in history.
+    monkeypatch.setattr(main_mod, "_optional_settlements_cache", lambda: None)
+    range_response = client.get(
+        "/risk/point",
+        params={
+            "lat": 51.80,
+            "lon": 108.05,
+            "method": "range",
+            "area_ha": 10,
+        },
+    )
+    assert range_response.status_code == 200, range_response.text
+    range_body = range_response.json()
+    assert range_body["method"] == "range"
+    assert range_body["road_source"] == "osm"
+    assert range_body["road_distance_m"] == pytest.approx(120.0)
+    assert range_body["settlement_distance_m"] == pytest.approx(450.0)
+    assert range_body["area_ha"] == 10.0
+    assert range_body["probability_range"]["area_ha"] == 10.0
+    assert (
+        range_body["probability_range"]["lower"]["probability"]
+        < range_body["probability_range"]["base"]["probability"]
+        < range_body["probability_range"]["upper"]["probability"]
+    )
+    assert range_body["fire_probability"] == pytest.approx(
+        range_body["probability_range"]["base"]["probability"]
+    )
+    assert range_body["risk_level"] == "elevated"
+    assert range_body["risk_level_ru"] == "повышенный"
+    assert range_body["explanation"]["method"] == "range"
+    assert range_body["explanation"]["distance_sources"] == {
+        "road": "osm",
+        "settlement": "osm",
+    }
+
+    # Manual distances keep the range method usable when neither local layers
+    # nor OSM are available (what-if mode).
+    manual_range = client.get(
+        "/risk/point",
+        params={
+            "lat": 51.80,
+            "lon": 108.05,
+            "method": "range",
+            "road_distance_m": 100,
+            "settlement_distance_m": 500,
+        },
+    )
+    assert manual_range.status_code == 200, manual_range.text
+    manual_body = manual_range.json()
+    assert manual_body["road_source"] == "manual"
+    assert manual_body["road_distance_m"] == 100.0
+    assert manual_body["settlement_distance_m"] == 500.0
+    assert manual_body["explanation"]["distance_sources"] == {
+        "road": "manual",
+        "settlement": "manual",
+    }
 

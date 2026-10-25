@@ -8,17 +8,20 @@ import numpy as np
 from shapely.geometry import Point
 
 
-def distance_to_nearest_road(point_metric: Point, roads_metric, tree=None) -> float:
-    """Distance (m) from point_metric to the nearest road (same metric CRS).
+def distance_to_nearest_feature(
+    point_metric: Point,
+    features_metric,
+    tree=None,
+    *,
+    label: str = "feature",
+) -> float:
+    """Distance (m) from ``point_metric`` to the nearest vector feature.
 
-    When a prebuilt ``tree`` (shapely ``STRtree`` over the metric geometries)
-    is supplied, the nearest geometry is resolved in O(log N) instead of an
-    O(N) scan across every road. Without a tree it falls back to the
-    vectorized GeoDataFrame distance so callers that only have the raw data
-    keep working.
+    The function is intentionally layer-agnostic: roads, settlements and other
+    vector layers use the same metric CRS and an optional prebuilt STRtree.
     """
-    if roads_metric is None or roads_metric.empty:
-        raise ValueError("Cannot compute distance: road data is empty.")
+    if features_metric is None or features_metric.empty:
+        raise ValueError(f"Cannot compute distance: {label} data is empty.")
 
     if tree is not None:
         # Prefer the convenience API when the shapely version provides it,
@@ -32,8 +35,18 @@ def distance_to_nearest_road(point_metric: Point, roads_metric, tree=None) -> fl
         d = point_metric.distance(nearest)
         return float(d) if d < float("inf") else float("inf")
 
-    distances = roads_metric.geometry.distance(point_metric)
+    distances = features_metric.geometry.distance(point_metric)
     return float(distances.min())
+
+
+def distance_to_nearest_road(point_metric: Point, roads_metric, tree=None) -> float:
+    """Distance (m) from point_metric to the nearest road (same metric CRS).
+
+    Kept as a named wrapper for the road-specific call sites and tests.
+    """
+    return distance_to_nearest_feature(
+        point_metric, roads_metric, tree, label="road"
+    )
 
 
 def road_density_near_point(

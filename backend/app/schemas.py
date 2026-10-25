@@ -15,6 +15,26 @@ class LoginResponse(BaseModel):
     username: str
 
 
+class ScenarioProbabilityOut(BaseModel):
+    key: str
+    label: str
+    lambda0: float
+    beta: float
+    gamma: float
+    lambda_per_ha_year: float
+    probability: float
+    percent: float
+
+
+class ProbabilityRangeOut(BaseModel):
+    area_ha: float
+    lower: ScenarioProbabilityOut
+    base: ScenarioProbabilityOut
+    upper: ScenarioProbabilityOut
+    risk_level: str
+    risk_level_ru: str
+
+
 class PointRiskOut(BaseModel):
     lat: float
     lon: float
@@ -26,8 +46,11 @@ class PointRiskOut(BaseModel):
     base_probability: float
     fire_probability: float
     risk_level: str
+    risk_level_ru: str | None = None
     risk_reason: str
     summary: str | None = None
+    area_ha: float | None = None
+    probability_range: ProbabilityRangeOut | None = None
     explanation: dict[str, Any] | None = None
 
 

@@ -1,13 +1,14 @@
 """SpaceVision API: AI road recognition + SHP fire risk."""
 import logging
 import json
+import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pyproj import Transformer
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from .analytics import build_analytics_summary
 from .auth import create_access_token, decode_token, hash_password, verify_password
-from .config import METRIC_CRS, R0_METERS, ROADS_SHP_PATH
+from .config import METRIC_CRS, R0_METERS, ROADS_SHP_PATH, SETTLEMENTS_SHP_PATH
 from .database import (
     PREDICTION_DIR,
     SessionLocal,
@@ -26,6 +27,7 @@ from .database import (
 )
 from .distance import distance_to_nearest_road, road_density_near_point
 from .fire_history import FireRiskRecord, record_fire_risk
+from .fire_probability import BASE_SCENARIO, format_percent
 from .fire_image import (
     FireImageModelError,
     classify_image_bytes,
@@ -40,6 +42,10 @@ from .fire_risk import (
 from .gis import select_metric_crs, to_metric
 from .models import Upload, User
 from .osm import nearest_distances_from_osm
+from .point_probability import (
+    DistanceDataError,
+    calculate_point_fire_probability,
+)
 from .road_data import (
     RoadDataError,
     RoadDataProvider,
@@ -49,6 +55,11 @@ from .road_data import (
 )
 from .road_influence import road_influence
 from .satellite import SatelliteTileError, fetch_satellite_tile
+from .settlement_data import (
+    SettlementDataError,
+    build_settlements_cache,
+    get_settlements_cache,
+)
 from .schemas import (
     AnalyticsSummaryOut,
     FireImageRiskOut,
@@ -291,6 +302,17 @@ def _collect_risk_context(lat: float, lon: float) -> tuple[dict, dict]:
     return osm_future.result(), weather_future.result()
 
 
+def _optional_settlements_cache():
+    """Load the optional settlements SHP once; return ``None`` if absent."""
+    cache = get_settlements_cache()
+    if cache is None:
+        try:
+            cache = build_settlements_cache(SETTLEMENTS_SHP_PATH, METRIC_CRS)
+        except SettlementDataError:
+            return None
+    return cache
+
+
 def _ai_probability(risk_score: float) -> float:
     """Calibrate the image model's 0..1 risk score to a point probability.
 
@@ -524,7 +546,10 @@ def _build_ai_explanation(
 def point_risk(
     lat: float,
     lon: float,
-    method: Literal["formula", "ai"] = "formula",
+    method: Literal["formula", "ai", "range"] = "formula",
+    area_ha: float = Query(1.0, gt=0, le=1_000_000),
+    road_distance_m: float | None = Query(None, ge=0),
+    settlement_distance_m: float | None = Query(None, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PointRiskOut:
@@ -553,6 +578,65 @@ def point_risk(
 
     influence = road_influence(r, R0_METERS) if r is not None else 0.0
     road_source = "shp" if r is not None else "none"
+
+    if method == "range":
+        settlements = _optional_settlements_cache()
+        try:
+            point_result = calculate_point_fire_probability(
+                lat,
+                lon,
+                area_ha=area_ha,
+                roads=cache,
+                settlements=settlements,
+                road_distance_m=road_distance_m,
+                settlement_distance_m=settlement_distance_m,
+                osm_lookup=nearest_distances_from_osm,
+            )
+        except DistanceDataError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        result = point_result.result
+        explanation = result.explanation()
+        explanation["distance_sources"] = {
+            "road": point_result.road.source,
+            "settlement": point_result.settlement.source,
+        }
+        explanation["interpretation"] = result.summary()
+        summary = result.summary()
+        record_fire_risk(
+            db,
+            username=current_user.username,
+            lat=lat,
+            lon=lon,
+            fire_probability=result.base.probability,
+            risk_level=result.risk_level,
+            summary=summary,
+            explanation=explanation,
+        )
+        return PointRiskOut(
+            lat=lat,
+            lon=lon,
+            method="range",
+            road_distance_m=result.road_distance_m,
+            settlement_distance_m=result.settlement_distance_m,
+            road_influence=math.exp(-BASE_SCENARIO.beta * result.road_distance_m),
+            road_source=point_result.road.source,
+            base_probability=result.base.probability,
+            fire_probability=result.base.probability,
+            risk_level=result.risk_level,
+            risk_level_ru=result.risk_level_ru,
+            risk_reason=(
+                f"Годовая вероятность на {result.area_ha:g} га: "
+                f"нижняя {format_percent(result.lower.percent)}%, "
+                f"базовая {format_percent(result.base.percent)}%, "
+                f"верхняя {format_percent(result.upper.percent)}%. "
+                f"Уровень по базовому сценарию: {result.risk_level_ru}."
+            ),
+            summary=summary,
+            area_ha=result.area_ha,
+            probability_range=result.as_dict(),
+            explanation=explanation,
+        )
 
     if method == "ai":
         status = model_status()

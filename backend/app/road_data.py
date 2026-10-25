@@ -80,6 +80,11 @@ class RoadsCache:
     roads_metric: gpd.GeoDataFrame
     tree: STRtree
 
+    @property
+    def metric_gdf(self) -> gpd.GeoDataFrame:
+        """Generic-layer alias used by :mod:`app.point_probability`."""
+        return self.roads_metric
+
 
 _cache: Optional[RoadsCache] = None
 _cache_lock = threading.Lock()
