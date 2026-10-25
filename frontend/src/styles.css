@@ -2994,3 +2994,9 @@ button[type="submit"]:hover:not(:disabled),
   min-width: 220px;
 }
 
+
+.map-legend-note {
+  color: var(--ink-500);
+  font-size: 12px;
+}
+

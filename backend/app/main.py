@@ -28,7 +28,16 @@ from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
 from .fire_ml import FireMLError, point_fire_probability
 from .fire_registry import fire_statistics
-from .fire_probability import BETA, GAMMA, LAMBDA0, format_percent, risk_level_from_percent
+from .fire_probability import (
+    BETA,
+    GAMMA,
+    LAMBDA0,
+    LARGE_FIRE_NOTE,
+    ML_RISK_THRESHOLDS,
+    format_percent,
+    risk_level_from_percent,
+    thresholds_text,
+)
 from .fire_image import (
     FireImageModelError,
     classify_image_bytes,
@@ -487,18 +496,18 @@ def point_risk(
         features = ml["features"]
         probability = ml["probability"]
         percent = probability * 100.0
-        level_code, level_ru = risk_level_from_percent(percent)
+        level_code, level_ru = risk_level_from_percent(percent, ML_RISK_THRESHOLDS)
         road_m = features["dist_road_m"]
         settlement_m = features["dist_settlement_m"]
         summary = (
-            f"Годовая вероятность {format_percent(percent)}% ({level_ru}) на 1 га "
-            "по модели, обученной на реестре пожаров ИСДМ."
+            f"Годовая вероятность крупного пожара (более 200 га) "
+            f"{format_percent(percent)}% ({level_ru}) на 1 га по модели реестра ИСДМ."
         )
         reason = (
-            f"ИИ-модель по реестру ИСДМ (Бурятия, 2000–2025): вероятность "
+            f"ИИ-модель по реестру ИСДМ (Бурятия, 2000–2025): шанс крупного пожара "
             f"{format_percent(percent)}% за год на 1 га. Учтены расстояния до дороги "
             f"({road_m:.0f} м), населённого пункта ({settlement_m:.0f} м), железной "
-            "дороги, район и месяц."
+            f"дороги, район и месяц. {LARGE_FIRE_NOTE}"
         )
         explanation = {
             "method": "ml",
@@ -519,8 +528,13 @@ def point_risk(
                 "probability": probability,
                 "percent": percent,
             },
-            "risk_level": {"code": level_code, "label_ru": level_ru},
+            "risk_level": {
+                "code": level_code,
+                "label_ru": level_ru,
+                "thresholds_percent": thresholds_text(ML_RISK_THRESHOLDS),
+            },
             "assumptions": [
+                LARGE_FIRE_NOTE,
                 "Интенсивность получена из модели шансов по числу пожаров в год и площади региона.",
                 "Признаки считаются на сервере по слоям заказчика, карта не нужна.",
                 "Месяц берётся текущий; сезон влияет на результат заметно.",
@@ -742,7 +756,7 @@ async def ai_fire_risk_image(
 @app.post("/uploads", response_model=UploadOut)
 async def create_upload(
     file: UploadFile = File(...),
-    title: str = Form(...),
+    title: str = Form(default=""),
     tile_z: str = Form(default=""),
     tile_x: str = Form(default=""),
     tile_y: str = Form(default=""),
@@ -765,11 +779,9 @@ async def create_upload(
     parsed_tile_y = parse_tile_value(tile_y, "tile_y")
 
     extension = Path(file.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg"} | TIFF_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail="Поддерживаются PNG, JPG, TIFF и GeoTIFF.",
-        )
+    if extension not in TIFF_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Поддерживаются только TIFF и GeoTIFF.")
+    title = (title or "").strip() or Path(file.filename).stem
     content = await file.read()
     stem = uuid4().hex
     destination = UPLOAD_DIR / f"{stem}{extension}"
