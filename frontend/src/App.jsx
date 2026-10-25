@@ -19,6 +19,7 @@ import {
   MapPinned,
   Menu,
   Route,
+  Ruler,
   ShieldCheck,
   Upload,
   UserRound,
@@ -71,7 +72,7 @@ const TAB_META = {
   },
   map: {
     title: "Карта риска",
-    subtitle: "Один модуль: расчёт по формуле или по ИИ-модели",
+    subtitle: "Один модуль: формула, диапазон или ИИ-модель",
   },
   roads: {
     title: "Дороги",
@@ -99,8 +100,33 @@ const TAB_META = {
   },
 };
 
-const RISK_LABELS = { low: "Низкий", medium: "Средний", high: "Высокий" };
+const RISK_LABELS = {
+  very_low: "Очень низкий",
+  low: "Низкий",
+  moderate: "Умеренный",
+  elevated: "Повышенный",
+  medium: "Средний",
+  high: "Высокий",
+};
+const RISK_GROUPS = {
+  high: ["high", "elevated"],
+  medium: ["medium", "moderate"],
+  low: ["low", "very_low"],
+};
 const ROLE_LABELS = { admin: "Администратор", viewer: "Оператор" };
+const DISTANCE_SOURCE_LABELS = {
+  shp: "SHP",
+  osm: "OSM (резерв)",
+  manual: "задано вручную",
+  none: "нет данных",
+};
+
+function riskGroup(level) {
+  if (RISK_GROUPS.high.includes(level)) return "high";
+  if (RISK_GROUPS.medium.includes(level)) return "medium";
+  if (RISK_GROUPS.low.includes(level)) return "low";
+  return null;
+}
 
 function RiskBadge({ level }) {
   const key = level && RISK_LABELS[level] ? level : "unknown";
@@ -175,8 +201,8 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
   const withMasks = analytics?.uploads_with_predictions ?? 0;
   const averageRoad = analytics?.average_road_percentage ?? 0;
   const coverage = analytics?.global_road_coverage ?? 0;
-  const highRisk = riskHistory.filter((item) => item.risk_level === "high").length;
-  const mediumRisk = riskHistory.filter((item) => item.risk_level === "medium").length;
+  const highRisk = riskHistory.filter((item) => riskGroup(item.risk_level) === "high").length;
+  const mediumRisk = riskHistory.filter((item) => riskGroup(item.risk_level) === "medium").length;
   const riskTotal = riskHistory.length || 1;
   const recentUploads = uploads.slice(0, 5);
   const recentRisks = riskHistory.slice(0, 5);
@@ -322,7 +348,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                 </span>
                 <span className="quick-action-body">
                   <strong>Рассчитать риск</strong>
-                  <span>Формула или ИИ-модель</span>
+                  <span>Формула, диапазон или ИИ-модель</span>
                 </span>
               </button>
               <button className="quick-action" onClick={() => onNavigate("ai-fire")}>
@@ -355,7 +381,9 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
             ) : (
               <div className="risk-dist">
                 {["high", "medium", "low"].map((level) => {
-                  const count = riskHistory.filter((item) => item.risk_level === level).length;
+                  const count = riskHistory.filter(
+                    (item) => riskGroup(item.risk_level) === level
+                  ).length;
                   return (
                     <div className="risk-dist-row" key={level}>
                       <span>{RISK_LABELS[level]}</span>
@@ -516,10 +544,27 @@ function TrendChart({ points }) {
   );
 }
 
+function parseOptionalDistance(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const number = Number(text);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function formatPercent(value) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (value === 0) return "0";
+  if (value < 0.0001) return "<0.0001";
+  if (value < 0.01) return value.toFixed(4);
+  return value.toFixed(2);
+}
+
 function formatVal(value) {
   if (value == null) return "—";
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return "—";
+    if (value === 0) return "0";
+    if (Math.abs(value) < 0.0001) return value.toExponential(2);
     if (Math.abs(value) >= 100) return value.toFixed(0);
     if (Math.abs(value) >= 1) return value.toFixed(2);
     return value.toFixed(4);
@@ -733,14 +778,124 @@ function AiExplanationView({ explanation }) {
   );
 }
 
+function RangeExplanationView({ range, explanation }) {
+  const scenarios = range || explanation?.scenarios;
+  if (!scenarios?.base) return null;
+
+  const parameters = explanation?.parameters;
+  const inputs = explanation?.inputs;
+  const level = explanation?.risk_level;
+  const sources = explanation?.distance_sources;
+  const area = inputs?.area_ha ?? range?.area_ha;
+  const parameterRows = [
+    ["λ₀, пож./(га·год)", "lambda0"],
+    ["β, 1/м", "beta"],
+    ["γ, 1/м", "gamma"],
+  ];
+
+  return (
+    <div className="explanation range-explanation">
+      <div className="range-cards">
+        {["lower", "base", "upper"].map((key) => {
+          const scenario = scenarios[key];
+          return (
+            <div className={`range-card ${key}`} key={key}>
+              <span>{scenario.label}</span>
+              <strong>{formatPercent(scenario.percent)}%</strong>
+              <small>
+                λ = {formatVal(scenario.lambda_per_ha_year)} пож./(га·год)
+              </small>
+            </div>
+          );
+        })}
+      </div>
+
+      <details className="explanation-details" open>
+        <summary>Формула и параметры</summary>
+        <div className="explanation-equation">
+          {explanation?.equation ||
+            "λ = λ₀ · exp(−β · R_road) · exp(−γ · R_settlement); P = 1 − exp(−λ · A)"}
+        </div>
+        {inputs && (
+          <div className="explanation-kv">
+            <span>R_road: {inputs.road_distance_m?.toFixed(0)} м</span>
+            <span>
+              R_settlement: {inputs.settlement_distance_m?.toFixed(0)} м
+            </span>
+            <span>A: {inputs.area_ha} га</span>
+          </div>
+        )}
+        {parameters && (
+          <table className="explanation-factors range-params">
+            <thead>
+              <tr>
+                <th>Параметр</th>
+                <th>Нижняя</th>
+                <th>Средняя</th>
+                <th>Верхняя</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parameterRows.map(([label, key]) => (
+                <tr key={key}>
+                  <td>{label}</td>
+                  <td>{formatVal(parameters[key]?.lower)}</td>
+                  <td>{formatVal(parameters[key]?.base)}</td>
+                  <td>{formatVal(parameters[key]?.upper)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </details>
+
+      {sources && (
+        <div className="explanation-kv range-sources">
+          <span>Дороги: {DISTANCE_SOURCE_LABELS[sources.road] || sources.road}</span>
+          <span>
+            Населённые пункты:{" "}
+            {DISTANCE_SOURCE_LABELS[sources.settlement] || sources.settlement}
+          </span>
+        </div>
+      )}
+
+      {level && (
+        <div className="range-level">
+          <RiskBadge level={level.code} />
+          <span>{level.note}</span>
+        </div>
+      )}
+
+      {explanation?.assumptions?.length > 0 && (
+        <details className="explanation-details">
+          <summary>Допущения и ограничения</summary>
+          <ul className="range-assumptions">
+            {explanation.assumptions.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <div className="explanation-risk">
+        Вероятность хотя бы одного пожара за год на {area} га:{" "}
+        <strong>{formatPercent(scenarios.base.percent)}%</strong>
+      </div>
+    </div>
+  );
+}
+
 function RiskHistoryItem({ record, expanded, onToggle }) {
   const isAi = record.explanation?.method === "ai";
+  const isRange = record.explanation?.method === "range";
   return (
     <div className="risk-history-item">
       <button className="risk-history-summary" onClick={onToggle}>
         <span className="risk-history-summary-main">
-          <span className={`method-badge ${isAi ? "ai" : "formula"}`}>
-            {isAi ? "ИИ" : "Формула"}
+          <span
+            className={`method-badge ${isAi ? "ai" : isRange ? "range" : "formula"}`}
+          >
+            {isAi ? "ИИ" : isRange ? "Диапазон" : "Формула"}
           </span>
           {record.summary}
         </span>
@@ -749,6 +904,8 @@ function RiskHistoryItem({ record, expanded, onToggle }) {
       {expanded &&
         (isAi ? (
           <AiExplanationView explanation={record.explanation} />
+        ) : isRange ? (
+          <RangeExplanationView explanation={record.explanation} />
         ) : (
           <ExplanationView explanation={record.explanation} />
         ))}
@@ -796,7 +953,7 @@ function LoginScreen({ onSubmit }) {
             <span className="feature-icon">
               <MapPinned size={16} />
             </span>
-            Карта риска: формула или ИИ-модель по точке
+            Карта риска: формула, диапазон или ИИ-модель по точке
           </li>
           <li>
             <span className="feature-icon">
@@ -857,6 +1014,8 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [baseLayer, setBaseLayer] = useState("scheme");
   const [riskMethod, setRiskMethod] = useState("formula");
+  const [rangeRoadDistance, setRangeRoadDistance] = useState("");
+  const [rangeSettlementDistance, setRangeSettlementDistance] = useState("");
   const [historyTab, setHistoryTab] = useState("risk");
 
   const [uploads, setUploads] = useState([]);
@@ -1080,7 +1239,21 @@ export default function App() {
     setRiskError("");
     setPointRisk(null);
     try {
-      const risk = await getPointRisk(token, latlng.lat, latlng.lng, method);
+      const overrides =
+        method === "range"
+          ? {
+              roadDistanceM: parseOptionalDistance(rangeRoadDistance),
+              settlementDistanceM: parseOptionalDistance(rangeSettlementDistance),
+            }
+          : {};
+      const risk = await getPointRisk(
+        token,
+        latlng.lat,
+        latlng.lng,
+        method,
+        1,
+        overrides
+      );
       setPointRisk(risk);
       loadRiskHistory();
     } catch (err) {
@@ -1358,10 +1531,11 @@ export default function App() {
               {roadsError && (
                 <Alert type="warning">
                   <p>
-                    <strong>Дороги из SHP ещё не загружены.</strong> Формула может
-                    использовать резервный слой OSM; если он недоступен, дорожный
-                    фактор не учитывается. Для точного расчёта загрузите shapefile
-                    (.shp, .shx, .dbf, .prj) во вкладке «Дороги».
+                    <strong>Дороги из SHP ещё не загружены.</strong> Формула и
+                    диапазон могут использовать резервный слой OSM; если он
+                    недоступен, дорожный фактор не учитывается, а для диапазона
+                    можно указать расстояния вручную. Для точного расчёта загрузите
+                    shapefile (.shp, .shx, .dbf, .prj) во вкладке «Дороги».
                   </p>
                   <p className="roads-hint-detail">{roadsError}</p>
                   <button className="btn-sm" onClick={() => goTo("roads")}>
@@ -1410,8 +1584,15 @@ export default function App() {
                           ) : pointRisk ? (
                             <div>
                               <strong>
-                                {(pointRisk.fire_probability * 100).toFixed(1)}% ·{" "}
-                                {pointRisk.method === "ai" ? "ИИ-модель" : "формула"}
+                                {pointRisk.method === "range"
+                                  ? formatPercent(pointRisk.fire_probability * 100)
+                                  : (pointRisk.fire_probability * 100).toFixed(1)}
+                                % ·{" "}
+                                {pointRisk.method === "ai"
+                                  ? "ИИ-модель"
+                                  : pointRisk.method === "range"
+                                    ? "диапазон"
+                                    : "формула"}
                               </strong>
                               <div style={{ margin: "6px 0" }}>
                                 <RiskBadge level={pointRisk.risk_level} />
@@ -1419,6 +1600,11 @@ export default function App() {
                               До дороги:{" "}
                               {pointRisk.road_distance_m != null
                                 ? `${pointRisk.road_distance_m.toFixed(0)} м`
+                                : "—"}
+                              <br />
+                              До поселения:{" "}
+                              {pointRisk.settlement_distance_m != null
+                                ? `${pointRisk.settlement_distance_m.toFixed(0)} м`
                                 : "—"}
                               <br />
                               {pointRisk.method === "ai" ? (
@@ -1430,6 +1616,26 @@ export default function App() {
                                   {(
                                     (pointRisk.explanation?.ai?.confidence || 0) * 100
                                   ).toFixed(1)}
+                                  %
+                                </>
+                              ) : pointRisk.method === "range" ? (
+                                <>
+                                  Нижняя:{" "}
+                                  {formatPercent(
+                                    pointRisk.probability_range?.lower?.percent
+                                  )}
+                                  %
+                                  <br />
+                                  Средняя:{" "}
+                                  {formatPercent(
+                                    pointRisk.probability_range?.base?.percent
+                                  )}
+                                  %
+                                  <br />
+                                  Верхняя:{" "}
+                                  {formatPercent(
+                                    pointRisk.probability_range?.upper?.percent
+                                  )}
                                   %
                                 </>
                               ) : (
@@ -1465,6 +1671,14 @@ export default function App() {
                         <Activity size={15} /> Формула
                       </button>
                       <button
+                        className={
+                          riskMethod === "range" ? "method-btn active" : "method-btn"
+                        }
+                        onClick={() => handleMethodChange("range")}
+                      >
+                        <Ruler size={15} /> Диапазон
+                      </button>
+                      <button
                         className={riskMethod === "ai" ? "method-btn active" : "method-btn"}
                         onClick={() => handleMethodChange("ai")}
                       >
@@ -1474,8 +1688,53 @@ export default function App() {
                     <p className="method-note">
                       {riskMethod === "formula"
                         ? "Погода, дороги, поселения и сезон. Быстрый объяснимый расчёт."
-                        : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
+                        : riskMethod === "range"
+                          ? "Нижняя, средняя и верхняя годовые вероятности по расстояниям до дорог и поселений. Площадь — 1 га."
+                          : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
                     </p>
+                    {riskMethod === "range" && (
+                      <div className="range-manual">
+                        <p>
+                          Пусто — автоматически по SHP/OSM. Если слоёв нет, укажите
+                          расстояния вручную.
+                        </p>
+                        <div className="range-manual-grid">
+                          <label>
+                            <span>До дороги, м</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="авто"
+                              value={rangeRoadDistance}
+                              onChange={(event) =>
+                                setRangeRoadDistance(event.target.value)
+                              }
+                            />
+                          </label>
+                          <label>
+                            <span>До поселения, м</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="авто"
+                              value={rangeSettlementDistance}
+                              onChange={(event) =>
+                                setRangeSettlementDistance(event.target.value)
+                              }
+                            />
+                          </label>
+                        </div>
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={() => calculateRisk(selectedPoint, "range")}
+                          disabled={!selectedPoint || riskLoading}
+                        >
+                          Применить расстояния
+                        </button>
+                      </div>
+                    )}
                     {riskMethod === "ai" && (
                       <div className={`method-model-state ${fireStatus?.state || "unknown"}`}>
                         <span>
@@ -1510,7 +1769,9 @@ export default function App() {
                       <span className="spinner lg" />
                       {riskMethod === "ai"
                         ? "Классификация космоснимка участка…"
-                        : "Расчёт вероятности…"}
+                        : riskMethod === "range"
+                          ? "Расчёт нижней, средней и верхней вероятности…"
+                          : "Расчёт вероятности…"}
                     </div>
                   ) : riskError ? (
                     <div className="explanation-placeholder error">
@@ -1528,14 +1789,19 @@ export default function App() {
                     <>
                       <div className={`risk-hero ${pointRisk.risk_level || "low"}`}>
                         <div className="risk-hero-value">
-                          {(pointRisk.fire_probability * 100).toFixed(1)}%
+                          {pointRisk.method === "range"
+                            ? formatPercent(pointRisk.fire_probability * 100)
+                            : (pointRisk.fire_probability * 100).toFixed(1)}
+                          %
                         </div>
                         <div className="risk-hero-meta">
                           <RiskBadge level={pointRisk.risk_level} />
                           <span>
                             {pointRisk.method === "ai"
                               ? "по снимку · текущий сезон"
-                              : "в текущем пожароопасном сезоне"}
+                              : pointRisk.method === "range"
+                                ? "базовый сценарий · за год"
+                                : "в текущем пожароопасном сезоне"}
                           </span>
                         </div>
                         <div className="risk-hero-facts">
@@ -1548,15 +1814,32 @@ export default function App() {
                             </strong>
                           </div>
                           <div className="risk-fact">
+                            <span>До поселения</span>
+                            <strong>
+                              {pointRisk.settlement_distance_m != null
+                                ? `${pointRisk.settlement_distance_m.toFixed(0)} м`
+                                : "—"}
+                            </strong>
+                          </div>
+                          <div className="risk-fact">
                             <span>Метод</span>
                             <strong>
-                              {pointRisk.method === "ai" ? "ИИ-модель" : "Формула"}
+                              {pointRisk.method === "ai"
+                                ? "ИИ-модель"
+                                : pointRisk.method === "range"
+                                  ? "Диапазон"
+                                  : "Формула"}
                             </strong>
                           </div>
                         </div>
                       </div>
                       {pointRisk.method === "ai" ? (
                         <AiExplanationView explanation={pointRisk.explanation} />
+                      ) : pointRisk.method === "range" ? (
+                        <RangeExplanationView
+                          range={pointRisk.probability_range}
+                          explanation={pointRisk.explanation}
+                        />
                       ) : (
                         <ExplanationView explanation={pointRisk.explanation} />
                       )}
@@ -1566,13 +1849,17 @@ export default function App() {
                       <span className="empty-state-icon">
                         {riskMethod === "ai" ? (
                           <BrainCircuit size={22} />
+                        ) : riskMethod === "range" ? (
+                          <Ruler size={22} />
                         ) : (
                           <MapPinned size={22} />
                         )}
                       </span>
                       {riskMethod === "ai"
                         ? "Поставьте точку — модель классифицирует космоснимок участка."
-                        : "Поставьте точку — формула рассчитает вероятность и покажет факторы."}
+                        : riskMethod === "range"
+                          ? "Поставьте точку — рассчитаем нижнюю, среднюю и верхнюю вероятность по расстояниям."
+                          : "Поставьте точку — формула рассчитает вероятность и покажет факторы."}
                     </div>
                   )}
                 </aside>
