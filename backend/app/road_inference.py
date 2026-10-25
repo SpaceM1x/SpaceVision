@@ -11,6 +11,7 @@ import torch
 
 
 IMAGE_SIZE = 512
+TILE_OVERLAP = 128
 _MODEL: torch.nn.Module | None = None
 _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -23,8 +24,6 @@ def _checkpoint_path() -> Path:
 def _build_transform() -> A.Compose:
     return A.Compose(
         [
-            A.PadIfNeeded(min_height=IMAGE_SIZE, min_width=IMAGE_SIZE, border_mode=0, fill=0),
-            A.CenterCrop(IMAGE_SIZE, IMAGE_SIZE),
             A.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225],
@@ -58,30 +57,45 @@ def _load_model() -> torch.nn.Module:
     return model
 
 
+def _tile_starts(length: int) -> list[int]:
+    last = length - IMAGE_SIZE
+    starts = list(range(0, last + 1, IMAGE_SIZE - TILE_OVERLAP))
+    if starts[-1] != last:
+        starts.append(last)
+    return starts
+
+
+def _predict_probabilities(image_rgb: np.ndarray, model: torch.nn.Module) -> np.ndarray:
+    """Road probability for every pixel of the whole image, averaged over tiles."""
+    height, width = image_rgb.shape[:2]
+    pad_h = max(0, IMAGE_SIZE - height)
+    pad_w = max(0, IMAGE_SIZE - width)
+    padded = np.pad(image_rgb, ((0, pad_h), (0, pad_w), (0, 0)))
+    padded_h, padded_w = padded.shape[:2]
+
+    transform = _build_transform()
+    total = np.zeros((padded_h, padded_w), dtype=np.float32)
+    count = np.zeros((padded_h, padded_w), dtype=np.float32)
+    for row in _tile_starts(padded_h):
+        for col in _tile_starts(padded_w):
+            tile = padded[row:row + IMAGE_SIZE, col:col + IMAGE_SIZE]
+            tensor = transform(image=tile)["image"].float().unsqueeze(0).to(_DEVICE)
+            with torch.no_grad():
+                probs = torch.sigmoid(model(tensor)).squeeze().cpu().numpy()
+            total[row:row + IMAGE_SIZE, col:col + IMAGE_SIZE] += probs
+            count[row:row + IMAGE_SIZE, col:col + IMAGE_SIZE] += 1
+    return (total / count)[:height, :width]
+
+
 def run_road_segmentation(image_path: Path, prediction_dir: Path, threshold: float = 0.5) -> tuple[Path, Path]:
     model = _load_model()
-    transform = _build_transform()
-
     image_rgb = np.array(Image.open(image_path).convert("RGB"))
-    transformed = transform(image=image_rgb)
-    image_tensor = transformed["image"].float().unsqueeze(0).to(_DEVICE)
+    probs = _predict_probabilities(image_rgb, model)
 
-    with torch.no_grad():
-        logits = model(image_tensor)
-        probs = torch.sigmoid(logits)
-        pred = (probs > threshold).float()
+    road_pixels = probs > threshold
+    pred_mask = road_pixels.astype(np.uint8) * 255
 
-    pred_mask = pred.squeeze().cpu().numpy().astype(np.uint8) * 255
-
-    normalized = image_tensor.squeeze(0).cpu().permute(1, 2, 0).numpy()
-    normalized = (
-        normalized * np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        + np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    )
-    normalized = np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
-
-    overlay = normalized.copy()
-    road_pixels = pred_mask > 0
+    overlay = image_rgb.copy()
     overlay[road_pixels] = (0.6 * overlay[road_pixels] + 0.4 * np.array([255, 0, 0])).astype(np.uint8)
 
     prediction_dir.mkdir(parents=True, exist_ok=True)
