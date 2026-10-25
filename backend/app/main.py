@@ -55,7 +55,12 @@ from .point_probability import (
     DistanceDataError,
     calculate_point_fire_probability,
 )
-from .snapshot import TIFF_EXTENSIONS, SnapshotError, convert_tiff_snapshot
+from .snapshot import (
+    TIFF_EXTENSIONS,
+    SnapshotError,
+    build_road_overlay,
+    convert_tiff_snapshot,
+)
 from .road_data import (
     RoadDataError,
     build_roads_cache,
@@ -108,10 +113,17 @@ def _prediction_paths(upload: Upload) -> tuple[Path, Path]:
     )
 
 
+def _roads_overlay_path(upload: Upload) -> Path:
+    return PREDICTION_DIR / f"{Path(upload.file_path).stem}_roads.png"
+
+
 def serialize_upload(upload: Upload) -> UploadOut:
     mask_path, overlay_path = _prediction_paths(upload)
     mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
     overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
+    roads_overlay_url = (
+        f"/uploads/{upload.id}/roads-overlay" if mask_path.exists() else None
+    )
     geo_bounds = None
     if None not in (upload.geo_south, upload.geo_west, upload.geo_north, upload.geo_east):
         geo_bounds = [upload.geo_south, upload.geo_west, upload.geo_north, upload.geo_east]
@@ -126,6 +138,7 @@ def serialize_upload(upload: Upload) -> UploadOut:
         mask_url=mask_url,
         overlay_url=overlay_url,
         geo_bounds=geo_bounds,
+        roads_overlay_url=roads_overlay_url,
     )
 
 
@@ -851,6 +864,20 @@ def get_upload_mask(upload_id: int, db: Session = Depends(get_db)):
     if not mask_path.exists():
         raise HTTPException(status_code=404, detail="Mask not found")
     return FileResponse(mask_path)
+
+
+@app.get("/uploads/{upload_id}/roads-overlay")
+def get_upload_roads_overlay(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    mask_path, _ = _prediction_paths(upload)
+    if not mask_path.exists():
+        raise HTTPException(status_code=404, detail="Mask not found")
+    roads_path = _roads_overlay_path(upload)
+    if not roads_path.exists():
+        build_road_overlay(mask_path, roads_path)
+    return FileResponse(roads_path)
 
 
 @app.get("/uploads/{upload_id}/overlay")

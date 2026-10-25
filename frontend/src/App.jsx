@@ -95,11 +95,10 @@ const RISK_LABELS = {
   moderate: "Средний",
   medium: "Средний",
   high: "Относительно высокий",
-  very_high: "Очень высокий",
-  elevated: "Очень высокий",
+  elevated: "Относительно высокий",
 };
 const RISK_GROUPS = {
-  high: ["high", "very_high", "elevated"],
+  high: ["high", "elevated"],
   medium: ["medium", "moderate"],
   low: ["low", "very_low"],
 };
@@ -187,9 +186,7 @@ function RiskLegend() {
       <span>
         <i className="high" /> Относительно высокий
       </span>
-      <span>
-        <i className="very_high" /> Очень высокий
-      </span>
+
     </div>
   );
 }
@@ -1449,7 +1446,7 @@ export default function App() {
     };
   }, [token, activeTab, fireStats]);
 
-  const geoUploads = uploads.filter((item) => item.geo_bounds && item.overlay_url);
+  const geoUploads = uploads.filter((item) => item.geo_bounds && item.roads_overlay_url);
   const snapshotUpload = geoUploads.find((item) => item.id === mapSnapshotId) || null;
 
   function handleLogin(result) {
@@ -1761,7 +1758,7 @@ export default function App() {
 
               <div className="snapshot-bar">
                 <label>
-                  Снимок на карте{" "}
+                  Маска дорог на карте{" "}
                   <select
                     value={mapSnapshotId ?? ""}
                     onChange={(event) =>
@@ -1799,7 +1796,7 @@ export default function App() {
                     {snapshotUpload && (
                       <>
                         <ImageOverlay
-                          url={`${API_URL}${snapshotUpload.overlay_url}`}
+                          url={`${API_URL}${snapshotUpload.roads_overlay_url}`}
                           bounds={[
                             [snapshotUpload.geo_bounds[0], snapshotUpload.geo_bounds[1]],
                             [snapshotUpload.geo_bounds[2], snapshotUpload.geo_bounds[3]],
@@ -2138,6 +2135,24 @@ export default function App() {
                 </form>
                 {aiStatus && <Alert type="success">{aiStatus}</Alert>}
                 {aiError && <Alert type="error">{aiError}</Alert>}
+                {lastUploadedSnapshot?.mask_url && lastUploadedSnapshot?.overlay_url && (
+                  <div className="snapshot-preview">
+                    <figure>
+                      <figcaption>Маска дорог</figcaption>
+                      <img
+                        src={`${API_URL}${lastUploadedSnapshot.mask_url}`}
+                        alt="Маска дорог"
+                      />
+                    </figure>
+                    <figure>
+                      <figcaption>Маска поверх снимка</figcaption>
+                      <img
+                        src={`${API_URL}${lastUploadedSnapshot.overlay_url}`}
+                        alt="Маска дорог поверх снимка"
+                      />
+                    </figure>
+                  </div>
+                )}
                 {lastUploadedSnapshot?.geo_bounds && (
                   <button
                     className="btn-primary btn-sm"
@@ -2146,7 +2161,7 @@ export default function App() {
                       goTo("map");
                     }}
                   >
-                    <MapIcon size={15} /> Показать снимок на карте
+                    <MapIcon size={15} /> Показать маску дорог на карте
                   </button>
                 )}
                 <button
