@@ -1274,6 +1274,7 @@ button[type="submit"]:hover:not(:disabled),
 }
 
 .risk-badge.high,
+.risk-badge.very_high,
 .risk-badge.elevated {
   color: #b91c1c;
   background: var(--risk-high-bg);
@@ -1743,6 +1744,7 @@ button[type="submit"]:hover:not(:disabled),
 }
 
 .risk-hero.high,
+.risk-hero.very_high,
 .risk-hero.elevated {
   background: linear-gradient(135deg, #fff5f5, #fdeaea);
   border-color: #f3c6c6;
@@ -1767,6 +1769,7 @@ button[type="submit"]:hover:not(:disabled),
 }
 
 .risk-hero.high .risk-hero-value,
+.risk-hero.very_high .risk-hero-value,
 .risk-hero.elevated .risk-hero-value {
   color: #b91c1c;
 }

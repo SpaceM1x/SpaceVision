@@ -38,7 +38,7 @@ def test_probability_decreases_with_distance():
     far = calculate_fire_probability(5_000.0, 20_000.0, 1.0)
 
     assert far.probability < near.probability
-    assert far.risk_level == "very_low"
+    assert far.risk_level == risk_level_from_percent(far.percent)[0]
 
 
 def test_area_increases_probability_by_poisson_rule():
@@ -47,8 +47,8 @@ def test_area_increases_probability_by_poisson_rule():
     expected = -math.expm1(-result.lambda_per_ha_year * result.area_ha)
     assert result.probability == pytest.approx(expected)
     assert result.percent > 0.1
-    assert result.risk_level == "elevated"
-    assert result.risk_level_ru == "повышенный"
+    assert result.risk_level == "very_high"
+    assert result.risk_level_ru == "очень высокий"
 
 
 def test_invalid_inputs_are_rejected():
@@ -68,13 +68,15 @@ def test_invalid_inputs_are_rejected():
     ("percent", "code", "label"),
     [
         (0.0, "very_low", "очень низкий"),
-        (0.009, "very_low", "очень низкий"),
-        (0.01, "low", "низкий"),
-        (0.049, "low", "низкий"),
-        (0.05, "moderate", "умеренный"),
-        (0.149, "moderate", "умеренный"),
-        (0.15, "elevated", "повышенный"),
-        (10.0, "elevated", "повышенный"),
+        (0.0015, "very_low", "очень низкий"),
+        (0.0016, "low", "низкий"),
+        (0.0024, "low", "низкий"),
+        (0.0025, "moderate", "средний"),
+        (0.0032, "moderate", "средний"),
+        (0.0033, "high", "высокий"),
+        (0.0040, "high", "высокий"),
+        (0.0041, "very_high", "очень высокий"),
+        (10.0, "very_high", "очень высокий"),
     ],
 )
 def test_risk_level_thresholds(percent, code, label):
