@@ -28,23 +28,56 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-# Fitted to the ISDM fire registry of Buryatia, 2000-2025 (ml/fire_point_model).
-# To roll back to the original methodology table, set:
-#   LAMBDA0 = 0.0012, BETA = 0.0025, GAMMA = 0.0012
-LAMBDA0 = 4.90559e-05
-BETA = 2.67187e-05
-GAMMA = 1.17875e-05
+# Average Russian parameters from the methodology table. The formula deliberately
+# uses national averages; the ISDM-fitted model is a separate, data-driven method.
+LAMBDA0 = 0.0012
+BETA = 0.0025
+GAMMA = 0.0012
 
-# Annual probability thresholds, in percent, for a one-hectare point.  They are
-# the 20/40/60/80th percentiles of the fitted formula over random points in
-# Buryatia, so the classes are relative to this region, not official classes.
-RISK_THRESHOLDS: tuple[tuple[float, str, str], ...] = (
-    (0.0016, "very_low", "очень низкий"),
-    (0.0025, "low", "низкий"),
-    (0.0033, "moderate", "средний"),
-    (0.0041, "high", "высокий"),
+LEVEL_NAMES: tuple[tuple[str, str], ...] = (
+    ("very_low", "очень низкий"),
+    ("low", "низкий"),
+    ("moderate", "средний"),
+    ("high", "высокий"),
+    ("very_high", "очень высокий"),
 )
-TOP_RISK_LEVEL = ("very_high", "очень высокий")
+
+
+def _thresholds(cuts_percent: tuple[float, ...]) -> tuple[tuple[float, str, str], ...]:
+    """Four cut points (percent) give five levels: below each cut -> that level."""
+    return tuple(
+        (cut, code, label) for cut, (code, label) in zip(cuts_percent, LEVEL_NAMES)
+    )
+
+
+def thresholds_text(thresholds: tuple[tuple[float, str, str], ...]) -> dict[str, str]:
+    cuts = [cut for cut, _, _ in thresholds]
+    text = {thresholds[0][1]: f"< {cuts[0]:.4g}"}
+    for index in range(1, len(thresholds)):
+        text[thresholds[index][1]] = f"{cuts[index - 1]:.4g}–{cuts[index]:.4g}"
+    text[LEVEL_NAMES[-1][0]] = f"≥ {cuts[-1]:.4g}"
+    return text
+
+
+# Formula: classes are 20/40/60/80% of the highest value the formula can give
+# (a point right next to a road and a settlement, LAMBDA0 per hectare).
+_FORMULA_MAX_PERCENT = (1.0 - math.exp(-LAMBDA0)) * 100.0
+FORMULA_RISK_THRESHOLDS = _thresholds(
+    tuple(share * _FORMULA_MAX_PERCENT for share in (0.2, 0.4, 0.6, 0.8))
+)
+
+# ISDM model: classes are the 20/40/60/80th percentiles of the model over random
+# points in Buryatia, so they describe the region relative to itself.
+ML_RISK_THRESHOLDS = _thresholds((0.0016, 0.0025, 0.0033, 0.0041))
+
+# Kept for the legend text in the explanation.
+RISK_THRESHOLDS = FORMULA_RISK_THRESHOLDS
+TOP_RISK_LEVEL = LEVEL_NAMES[-1]
+
+LARGE_FIRE_NOTE = (
+    "Считаются шансы крупных пожаров (более 200 га по реестру ИСДМ), "
+    "а не любых возгораний, таких как костры или сжигание мусора."
+)
 
 
 class FireProbabilityError(ValueError):
@@ -82,8 +115,8 @@ class FireProbabilityResult:
 
     def summary(self) -> str:
         return (
-            f"Годовая вероятность {format_percent(self.percent)}% "
-            f"({self.risk_level_ru}) на {self.area_ha:g} га."
+            f"Годовая вероятность крупного пожара (более 200 га) "
+            f"{format_percent(self.percent)}% ({self.risk_level_ru}) на {self.area_ha:g} га."
         )
 
     def explanation(self) -> dict[str, Any]:
@@ -106,7 +139,8 @@ class FireProbabilityResult:
                     "unit": "пожаров / (га · год)",
                     "description": (
                         "Базовая интенсивность у самой инфраструктуры. "
-                        "Подобрана по реестру пожаров ИСДМ (Бурятия, 2000–2025)."
+                        "Среднее по России с учётом концентрации 60–80 % "
+                        "антропогенных пожаров вблизи дорог и населённых пунктов."
                     ),
                 },
                 "beta": {
@@ -115,7 +149,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по дорогам. Риск падает "
-                        "в e раз примерно на 37 км."
+                        "в e раз примерно на 400 м."
                     ),
                 },
                 "gamma": {
@@ -124,7 +158,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по населённым пунктам. Риск "
-                        "падает в e раз примерно на 85 км."
+                        "падает в e раз примерно на 830 м."
                     ),
                 },
                 "area_ha": {
@@ -174,16 +208,10 @@ class FireProbabilityResult:
             "risk_level": {
                 "code": self.risk_level,
                 "label_ru": self.risk_level_ru,
-                "thresholds_percent": {
-                    "very_low": "< 0.0016",
-                    "low": "0.0016–0.0025",
-                    "moderate": "0.0025–0.0033",
-                    "high": "0.0033–0.0041",
-                    "very_high": "≥ 0.0041",
-                },
+                "thresholds_percent": thresholds_text(FORMULA_RISK_THRESHOLDS),
                 "note": (
-                    "Это относительные классы годовой вероятности для 1 га, "
-                    "а не официальные классы пожарной опасности."
+                    "Классы — доли от максимума формулы (точка у дороги и посёлка). "
+                    "Это относительные классы, а не официальные классы пожарной опасности."
                 ),
             },
             "logic": [
@@ -193,11 +221,13 @@ class FireProbabilityResult:
                 "P = 1 − exp(−λ·A) — вероятность хотя бы одного события при пуассоновском потоке пожаров.",
             ],
             "assumptions": [
+                LARGE_FIRE_NOTE,
+                "Параметры λ₀, β, γ — усреднённые значения по России из методики.",
                 "Расстояния до дорог и населённых пунктов измеряются по слоям карты Leaflet.",
                 "Расстояния измеряются в метрах, площадь — в гектарах.",
                 "Поток пожаров приближённо считается пуассоновским и стационарным в течение года.",
                 "Модель не учитывает тип леса, запас горючего, засуху, рельеф и погоду конкретного дня.",
-                "Результат — вероятность хотя бы одного пожара, а не прогноз площади или тяжести.",
+                "Результат — вероятность хотя бы одного крупного пожара, а не прогноз площади или тяжести.",
             ],
         }
 
@@ -216,10 +246,13 @@ def format_percent(percent: float) -> str:
     return f"{value:.2f}"
 
 
-def risk_level_from_percent(percent: float) -> tuple[str, str]:
-    """Return ``(code, russian_label)`` for a formula percentage."""
+def risk_level_from_percent(
+    percent: float,
+    thresholds: tuple[tuple[float, str, str], ...] = FORMULA_RISK_THRESHOLDS,
+) -> tuple[str, str]:
+    """Return ``(code, russian_label)`` for an annual probability in percent."""
     value = float(percent)
-    for threshold, code, label in RISK_THRESHOLDS:
+    for threshold, code, label in thresholds:
         if value < threshold:
             return code, label
     return TOP_RISK_LEVEL

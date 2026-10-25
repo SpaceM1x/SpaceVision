@@ -4,8 +4,10 @@ import pytest
 
 from app.fire_probability import (
     BETA,
+    FORMULA_RISK_THRESHOLDS,
     GAMMA,
     LAMBDA0,
+    ML_RISK_THRESHOLDS,
     FireProbabilityError,
     calculate_fire_probability,
     format_percent,
@@ -64,23 +66,29 @@ def test_invalid_inputs_are_rejected():
         calculate_fire_probability(100.0, 500.0, -1.0)
 
 
+_CUTS = [cut for cut, _, _ in FORMULA_RISK_THRESHOLDS]
+
+
 @pytest.mark.parametrize(
     ("percent", "code", "label"),
     [
         (0.0, "very_low", "очень низкий"),
-        (0.0015, "very_low", "очень низкий"),
-        (0.0016, "low", "низкий"),
-        (0.0024, "low", "низкий"),
-        (0.0025, "moderate", "средний"),
-        (0.0032, "moderate", "средний"),
-        (0.0033, "high", "высокий"),
-        (0.0040, "high", "высокий"),
-        (0.0041, "very_high", "очень высокий"),
+        (_CUTS[0] - 1e-9, "very_low", "очень низкий"),
+        (_CUTS[0], "low", "низкий"),
+        (_CUTS[1] - 1e-9, "low", "низкий"),
+        (_CUTS[1], "moderate", "средний"),
+        (_CUTS[2], "high", "высокий"),
+        (_CUTS[3], "very_high", "очень высокий"),
         (10.0, "very_high", "очень высокий"),
     ],
 )
 def test_risk_level_thresholds(percent, code, label):
     assert risk_level_from_percent(percent) == (code, label)
+
+
+def test_ml_thresholds_are_separate_from_formula():
+    assert risk_level_from_percent(0.0037, ML_RISK_THRESHOLDS) == ("high", "высокий")
+    assert risk_level_from_percent(0.0037) == ("very_low", "очень низкий")
 
 
 @pytest.mark.parametrize(

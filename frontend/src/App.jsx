@@ -69,7 +69,7 @@ const TAB_META = {
   },
   map: {
     title: "Карта риска",
-    subtitle: "Формула, ИИ по реестру ИСДМ и снимки на карте",
+    subtitle: "Шансы крупных пожаров (более 200 га): формула или ИИ по реестру ИСДМ",
   },
   roads: {
     title: "Дороги",
@@ -173,7 +173,8 @@ function KpiCard({ icon: Icon, tone = "", label, value, hint }) {
 
 function RiskLegend() {
   return (
-    <div className="map-legend">
+    <div className="map-legend" title="Шанс крупного пожара (более 200 га) за год на 1 га">
+      <span className="map-legend-note">Шанс крупного пожара за год</span>
       <span>
         <i className="low" /> Низкий
       </span>
@@ -1231,7 +1232,7 @@ export default function App() {
   const [aiStatus, setAiStatus] = useState("");
   const [aiError, setAiError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [tileForm, setTileForm] = useState({ title: "", z: "", x: "", y: "" });
+  const [tileForm, setTileForm] = useState({ title: "" });
   const [file, setFile] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -1579,7 +1580,7 @@ export default function App() {
   async function handleUploadTile(event) {
     event.preventDefault();
     if (!file) {
-      setAiError("Выберите PNG, JPG, TIFF или GeoTIFF файл.");
+      setAiError("Выберите TIFF или GeoTIFF файл.");
       return;
     }
     setAiError("");
@@ -1588,10 +1589,7 @@ export default function App() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("title", tileForm.title);
-      formData.append("tile_z", tileForm.z);
-      formData.append("tile_x", tileForm.x);
-      formData.append("tile_y", tileForm.y);
+      formData.append("title", tileForm.title.trim());
       const uploaded = await uploadTile(formData, token);
       setAiStatus(
         uploaded?.mask_url
@@ -1600,7 +1598,7 @@ export default function App() {
       );
       setLastUploadedSnapshot(uploaded || null);
       setFile(null);
-      setTileForm({ title: "", z: "", x: "", y: "" });
+      setTileForm({ title: "" });
       await loadUploads();
       await loadAnalytics();
     } catch (error) {
@@ -1935,8 +1933,8 @@ export default function App() {
                     </div>
                     <p className="method-note">
                       {riskMethod === "formula"
-                        ? "Годовая вероятность по расстояниям до дороги и населённого пункта, измеренным на карте."
-                        : "Модель, обученная на реестре пожаров ИСДМ: дороги, посёлки, железные дороги, район и месяц."}
+                        ? "Шанс крупного пожара (более 200 га) за год: формула со средними значениями по России и расстояниями до дороги и посёлка с карты."
+                        : "Шанс крупного пожара (более 200 га) за год: модель, обученная на реестре ИСДМ по Бурятии (дороги, посёлки, железные дороги, район, месяц). Лучше соответствует данным заказчика, чем усреднённая по России формула."}
                     </p>
                   </div>
 
@@ -1971,8 +1969,8 @@ export default function App() {
                             {pointRisk.method === "ai"
                               ? "по снимку · текущий сезон"
                               : pointRisk.method === "ml"
-                                ? "по реестру ИСДМ · за год"
-                                : "по слоям карты · за год"}
+                                ? "шанс крупного пожара · реестр ИСДМ · за год"
+                                : "шанс крупного пожара · формула · за год"}
                           </span>
                         </div>
                         <div className="risk-hero-facts">
@@ -2109,53 +2107,25 @@ export default function App() {
               <article className="card">
                 <h2>Распознавание дорог по снимку</h2>
                 <p className="muted">
-                  Загрузите космоснимок — нейросеть U-Net построит маску дорог и
-                  оверлей. Результат появится в истории снимков.
+                  Загрузите GeoTIFF — нейросеть U-Net построит маску дорог и оверлей.
+                  Координаты берутся из файла, снимок можно показать на карте.
                 </p>
                 <form onSubmit={handleUploadTile} className="upload-form">
                   <input
-                    placeholder="Название снимка"
+                    placeholder="Название снимка (необязательно, по умолчанию имя файла)"
                     value={tileForm.title}
                     onChange={(event) =>
                       setTileForm((prev) => ({ ...prev, title: event.target.value }))
                     }
                     disabled={!canUpload}
                   />
-                  <div className="inputs-row">
-                    <input
-                      placeholder="z (опционально)"
-                      value={tileForm.z}
-                      onChange={(event) =>
-                        setTileForm((prev) => ({ ...prev, z: event.target.value }))
-                      }
-                      disabled={!canUpload}
-                    />
-                    <input
-                      placeholder="x (опционально)"
-                      value={tileForm.x}
-                      onChange={(event) =>
-                        setTileForm((prev) => ({ ...prev, x: event.target.value }))
-                      }
-                      disabled={!canUpload}
-                    />
-                    <input
-                      placeholder="y (опционально)"
-                      value={tileForm.y}
-                      onChange={(event) =>
-                        setTileForm((prev) => ({ ...prev, y: event.target.value }))
-                      }
-                      disabled={!canUpload}
-                    />
-                  </div>
                   <input
                     type="file"
-                    accept=".png,.jpg,.jpeg,.tif,.tiff"
+                    accept=".tif,.tiff"
                     onChange={(event) => setFile(event.target.files?.[0] || null)}
                     disabled={!canUpload}
                   />
-                  <p className="muted">
-                    PNG, JPG, TIFF или GeoTIFF. Для GeoTIFF координаты берутся из файла.
-                  </p>
+                  <p className="muted">Файлы TIFF или GeoTIFF.</p>
                   <button type="submit" disabled={!canUpload || isLoading}>
                     {isLoading ? "Распознавание…" : "Распознать дороги"}
                   </button>
@@ -2280,8 +2250,9 @@ export default function App() {
                       }))}
                     />
                     <p className="chart-caption">
-                      Реестр ИСДМ-Рослесхоза: пожары больше 200 га. Данные за 2023 год
-                      неполные (29 записей).
+                      Шансы в расчётах относятся к крупным пожарам: в реестре ИСДМ только
+                      пожары больше 200 га, а не костры и мелкие возгорания. Данные за 2023
+                      год неполные (29 записей).
                     </p>
                   </>
                 )}
@@ -2481,8 +2452,9 @@ export default function App() {
                             <strong>{upload.title || "Без названия"}</strong>
                             <span>{formatDate(upload.created_at)}</span>
                             <span>
-                              tile: z{upload.tile_z} / x{upload.tile_x} / y
-                              {upload.tile_y}
+                              {upload.geo_bounds
+                                ? "GeoTIFF с координатами"
+                                : `tile: z${upload.tile_z} / x${upload.tile_x} / y${upload.tile_y}`}
                             </span>
                             <div className="history-road-metric">
                               <div className="history-road-metric-head">

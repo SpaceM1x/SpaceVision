@@ -128,7 +128,7 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     assert abs(body["fire_probability"] - body["base_probability"]) < 1e-12
     assert body["method"] == "formula"
     assert body["explanation"]["method"] == "formula"
-    assert body["explanation"]["parameters"]["lambda0"]["value"] == pytest.approx(4.90559e-05)
+    assert body["explanation"]["parameters"]["lambda0"]["value"] == 0.0012
     assert body["explanation"]["distance_sources"] == {
         "road": "shp",
         "settlement": "osm",
@@ -158,7 +158,7 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     }
     assert map_body["fire_probability"] == pytest.approx(
         -math.expm1(
-            -4.90559e-05 * math.exp(-2.67187e-05 * 200) * math.exp(-1.17875e-05 * 500)
+            -0.0012 * math.exp(-0.0025 * 200) * math.exp(-0.0012 * 500)
         )
     )
 
