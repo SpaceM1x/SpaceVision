@@ -94,7 +94,7 @@ const RISK_LABELS = {
   low: "Низкий",
   moderate: "Средний",
   medium: "Средний",
-  high: "Высокий",
+  high: "Относительно высокий",
   very_high: "Очень высокий",
   elevated: "Очень высокий",
 };
@@ -185,7 +185,7 @@ function RiskLegend() {
         <i className="moderate" /> Средний
       </span>
       <span>
-        <i className="high" /> Высокий
+        <i className="high" /> Относительно высокий
       </span>
       <span>
         <i className="very_high" /> Очень высокий

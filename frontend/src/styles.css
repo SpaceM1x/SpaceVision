@@ -1230,7 +1230,7 @@ button[type="submit"]:hover:not(:disabled),
 }
 
 .risk-dist-fill.high {
-  background: var(--risk-high);
+  background: #f08a3c;
 }
 
 .risk-dist-value {
@@ -1273,7 +1273,11 @@ button[type="submit"]:hover:not(:disabled),
   background: var(--risk-medium-bg);
 }
 
-.risk-badge.high,
+.risk-badge.high {
+  color: #c2410c;
+  background: #fff3e8;
+}
+
 .risk-badge.very_high,
 .risk-badge.elevated {
   color: #b91c1c;
@@ -1655,7 +1659,7 @@ button[type="submit"]:hover:not(:disabled),
 }
 
 .map-legend i.high {
-  background: var(--risk-high);
+  background: #f08a3c;
 }
 
 .map-legend i.very_low {
@@ -1757,7 +1761,11 @@ button[type="submit"]:hover:not(:disabled),
   border-color: #f3ddb7;
 }
 
-.risk-hero.high,
+.risk-hero.high {
+  background: linear-gradient(135deg, #fff9f3, #ffeedd);
+  border-color: #f8d6b2;
+}
+
 .risk-hero.very_high,
 .risk-hero.elevated {
   background: linear-gradient(135deg, #fff5f5, #fdeaea);
@@ -1782,7 +1790,10 @@ button[type="submit"]:hover:not(:disabled),
   color: #b45309;
 }
 
-.risk-hero.high .risk-hero-value,
+.risk-hero.high .risk-hero-value {
+  color: #c2410c;
+}
+
 .risk-hero.very_high .risk-hero-value,
 .risk-hero.elevated .risk-hero-value {
   color: #b91c1c;
