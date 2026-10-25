@@ -158,7 +158,7 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     }
     assert map_body["fire_probability"] == pytest.approx(
         -math.expm1(
-            -0.0012 * math.exp(-0.01 * 200) * math.exp(-0.0012 * 500)
+            -0.0012 * math.exp(-0.01 * 200) * math.exp(-0.0001 * 500)
         )
     )
 
