@@ -123,7 +123,7 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["road_distance_m"] < 5.0
-    assert 0.99 < body["road_influence"] <= 1.0
+    assert 0.98 < body["road_influence"] <= 1.0
     assert body["road_source"] == "shp"
     assert abs(body["fire_probability"] - body["base_probability"]) < 1e-12
     assert body["method"] == "formula"
@@ -158,7 +158,7 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     }
     assert map_body["fire_probability"] == pytest.approx(
         -math.expm1(
-            -0.0012 * math.exp(-0.0025 * 200) * math.exp(-0.0012 * 500)
+            -0.0012 * math.exp(-0.01 * 200) * math.exp(-0.0012 * 500)
         )
     )
 

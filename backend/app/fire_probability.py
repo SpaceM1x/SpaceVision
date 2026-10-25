@@ -31,7 +31,7 @@ from typing import Any
 # Average Russian parameters from the methodology table. The formula deliberately
 # uses national averages; the ISDM-fitted model is a separate, data-driven method.
 LAMBDA0 = 0.0012
-BETA = 0.0025
+BETA = 0.01
 GAMMA = 0.0012
 
 LEVEL_NAMES: tuple[tuple[str, str], ...] = (
@@ -145,7 +145,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по дорогам. Риск падает "
-                        "в e раз примерно на 400 м."
+                        "в e раз примерно на 100 м."
                     ),
                 },
                 "gamma": {
