@@ -102,6 +102,19 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
             "road_density": 0.52, "settlement_density": 0.58,
         },
     )
+    monkeypatch.setattr(
+        main_mod,
+        "fire_weather",
+        lambda lat, lon: {
+            "index": 4200.0,
+            "normalized": 0.83,
+            "dry_days": 9,
+            "days": 30,
+            "source": "nasa-power",
+            "period": "test",
+            "error": None,
+        },
+    )
 
     client = TestClient(main_mod.app)
     base = str(roads_shp)
@@ -125,4 +138,66 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     assert body["road_source"] == "shp"
     # No double counting: the final probability equals the logistic P_base.
     assert abs(body["fire_probability"] - body["base_probability"]) < 1e-12
+    assert body["method"] == "formula"
+    assert body["explanation"]["weather"]["normalized"] == 0.83
+    assert any(
+        factor["name"] == "Погодная опасность (FWI)"
+        for factor in body["explanation"]["base"]["factors"]
+    )
+
+    # AI method: use a fake ready model and a fake tile, but exercise the real
+    # endpoint, calibration, explanation and history persistence.
+    monkeypatch.setattr(
+        main_mod,
+        "model_status",
+        lambda: {
+            "enabled": True,
+            "model_id": "fake/model",
+            "state": "ready",
+            "error": None,
+            "labels": [],
+        },
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "fetch_satellite_tile",
+        lambda lat, lon: {
+            "data": b"fake-tile",
+            "z": 15,
+            "x": 1,
+            "y": 2,
+            "url": "https://example.test/tile.jpg",
+            "cached": True,
+        },
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "classify_image_bytes",
+        lambda data: {
+            "available": True,
+            "model_id": "fake/model",
+            "predicted": "moderate",
+            "predicted_ru": "Средний",
+            "confidence": 0.72,
+            "risk_score": 0.5,
+            "risk_level": "medium",
+            "risk_level_ru": "Средний",
+            "probabilities": [
+                {"label": "moderate", "label_ru": "Средний", "probability": 0.72}
+            ],
+            "reason": None,
+        },
+    )
+
+    ai_response = client.get(
+        "/risk/point", params={"lat": 51.80, "lon": 108.05, "method": "ai"}
+    )
+    assert ai_response.status_code == 200, ai_response.text
+    ai_body = ai_response.json()
+    assert ai_body["method"] == "ai"
+    assert ai_body["risk_level"] == "high"
+    assert 0.10 < ai_body["fire_probability"] < 0.11
+    assert ai_body["explanation"]["ai"]["predicted"] == "moderate"
+    assert ai_body["explanation"]["ai"]["tile"]["url"].endswith("tile.jpg")
+    assert ai_body["summary"].startswith("10.4%")
 

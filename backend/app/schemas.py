@@ -18,6 +18,7 @@ class LoginResponse(BaseModel):
 class PointRiskOut(BaseModel):
     lat: float
     lon: float
+    method: str = "formula"
     road_distance_m: float | None = None
     settlement_distance_m: float | None = None
     road_influence: float
