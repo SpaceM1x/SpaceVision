@@ -28,10 +28,12 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-# Parameters for average Russian conditions (the table from the methodology).
-LAMBDA0 = 0.0012
-BETA = 0.0025
-GAMMA = 0.0012
+# Fitted to the ISDM fire registry of Buryatia, 2000-2025 (ml/fire_point_model).
+# To roll back to the original methodology table, set:
+#   LAMBDA0 = 0.0012, BETA = 0.0025, GAMMA = 0.0012
+LAMBDA0 = 4.90559e-05
+BETA = 2.67187e-05
+GAMMA = 1.17875e-05
 
 # Annual probability thresholds, in percent.  These are relative classes for a
 # one-hectare point estimate, not official fire-danger classes.
@@ -102,8 +104,7 @@ class FireProbabilityResult:
                     "unit": "пожаров / (га · год)",
                     "description": (
                         "Базовая интенсивность у самой инфраструктуры. "
-                        "Среднее по России с учётом концентрации 60–80 % "
-                        "антропогенных пожаров вблизи дорог и населённых пунктов."
+                        "Подобрана по реестру пожаров ИСДМ (Бурятия, 2000–2025)."
                     ),
                 },
                 "beta": {
@@ -112,7 +113,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по дорогам. Риск падает "
-                        "в e раз примерно на 400 м."
+                        "в e раз примерно на 37 км."
                     ),
                 },
                 "gamma": {
@@ -121,7 +122,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по населённым пунктам. Риск "
-                        "падает в e раз примерно на 830 м."
+                        "падает в e раз примерно на 85 км."
                     ),
                 },
                 "area_ha": {

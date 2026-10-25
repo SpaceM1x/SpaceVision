@@ -26,7 +26,8 @@ from .database import (
 )
 from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
-from .fire_probability import BETA, GAMMA, LAMBDA0, format_percent
+from .fire_ml import FireMLError, point_fire_probability
+from .fire_probability import BETA, GAMMA, LAMBDA0, format_percent, risk_level_from_percent
 from .fire_image import (
     FireImageModelError,
     classify_image_bytes,
@@ -431,7 +432,7 @@ def _build_ai_explanation(
 def point_risk(
     lat: float,
     lon: float,
-    method: Literal["formula", "ai"] = "formula",
+    method: Literal["formula", "ai", "ml"] = "formula",
     area_ha: float = Query(1.0, gt=0, le=1_000_000),
     road_distance_m: float | None = Query(None, ge=0),
     settlement_distance_m: float | None = Query(None, ge=0),
@@ -463,6 +464,85 @@ def point_risk(
 
     influence = road_influence(r, R0_METERS) if r is not None else 0.0
     road_source = "shp" if r is not None else "none"
+
+    if method == "ml":
+        try:
+            ml = point_fire_probability(lat, lon)
+        except FireMLError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        features = ml["features"]
+        probability = ml["probability"]
+        percent = probability * 100.0
+        level_code, level_ru = risk_level_from_percent(percent)
+        road_m = features["dist_road_m"]
+        settlement_m = features["dist_settlement_m"]
+        summary = (
+            f"Годовая вероятность {format_percent(percent)}% ({level_ru}) на 1 га "
+            "по модели, обученной на реестре пожаров ИСДМ."
+        )
+        reason = (
+            f"ИИ-модель по реестру ИСДМ (Бурятия, 2000–2025): вероятность "
+            f"{format_percent(percent)}% за год на 1 га. Учтены расстояния до дороги "
+            f"({road_m:.0f} м), населённого пункта ({settlement_m:.0f} м), железной "
+            "дороги, район и месяц."
+        )
+        explanation = {
+            "method": "ml",
+            "model": {
+                "name": "Градиентный бустинг (HistGradientBoosting) по реестру ИСДМ",
+                "training": (
+                    "Пожары 2000–2025 (Бурятия), фон 1:1 из случайных точек. "
+                    "Проверка на 2021–2025 (ROC-AUC 0.83)."
+                ),
+            },
+            "coordinates": {"lat": lat, "lon": lon},
+            "features": [
+                {"key": name, "value": value} for name, value in features.items()
+            ],
+            "result": {
+                "lambda_per_ha_year": ml["intensity_per_ha_year"],
+                "intensity_per_ha_year": ml["intensity_per_ha_year"],
+                "probability": probability,
+                "percent": percent,
+            },
+            "risk_level": {"code": level_code, "label_ru": level_ru},
+            "assumptions": [
+                "Интенсивность получена из модели шансов по числу пожаров в год и площади региона.",
+                "Признаки считаются на сервере по слоям заказчика, карта не нужна.",
+                "Месяц берётся текущий; сезон влияет на результат заметно.",
+                "Реестр содержит пожары больше 200 га, мелкие пожары не учтены.",
+            ],
+        }
+
+        record_fire_risk(
+            db,
+            username=current_user.username,
+            lat=lat,
+            lon=lon,
+            fire_probability=probability,
+            risk_level=level_code,
+            summary=summary,
+            explanation=explanation,
+        )
+
+        return PointRiskOut(
+            lat=lat,
+            lon=lon,
+            method="ml",
+            road_distance_m=road_m,
+            settlement_distance_m=settlement_m,
+            road_influence=math.exp(-BETA * road_m),
+            road_source="ml",
+            base_probability=probability,
+            fire_probability=probability,
+            risk_level=level_code,
+            risk_level_ru=level_ru,
+            risk_reason=reason,
+            summary=summary,
+            area_ha=1.0,
+            explanation=explanation,
+        )
 
     if method == "ai":
         status = model_status()

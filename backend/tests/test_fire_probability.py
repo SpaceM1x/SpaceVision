@@ -18,7 +18,7 @@ def test_zero_distance_matches_table():
 
     assert result.lambda_per_ha_year == pytest.approx(LAMBDA0)
     assert result.probability == pytest.approx(-math.expm1(-LAMBDA0))
-    assert result.percent == pytest.approx(0.11993, abs=1e-4)
+    assert result.percent == pytest.approx(-math.expm1(-LAMBDA0) * 100.0)
     assert result.road_decay == pytest.approx(1.0)
     assert result.settlement_decay == pytest.approx(1.0)
 
@@ -42,7 +42,7 @@ def test_probability_decreases_with_distance():
 
 
 def test_area_increases_probability_by_poisson_rule():
-    result = calculate_fire_probability(100.0, 500.0, 10.0)
+    result = calculate_fire_probability(100.0, 500.0, 10_000.0)
 
     expected = -math.expm1(-result.lambda_per_ha_year * result.area_ha)
     assert result.probability == pytest.approx(expected)
