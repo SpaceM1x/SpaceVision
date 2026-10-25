@@ -70,6 +70,8 @@ class UploadOut(BaseModel):
     created_at: datetime
     mask_url: str | None = None
     overlay_url: str | None = None
+    # [south, west, north, east] in WGS84, the order Leaflet expects after pairing.
+    geo_bounds: list[float] | None = None
 
     class Config:
         from_attributes = True

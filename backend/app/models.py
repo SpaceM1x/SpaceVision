@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -26,3 +26,8 @@ class Upload(Base):
     tile_y: Mapped[int] = mapped_column(Integer, index=True)
     uploaded_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # WGS84 extent of a GeoTIFF snapshot; NULL for plain PNG/JPG uploads.
+    geo_south: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geo_west: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geo_north: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geo_east: Mapped[float | None] = mapped_column(Float, nullable=True)

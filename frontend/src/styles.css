@@ -2979,3 +2979,15 @@ button[type="submit"]:hover:not(:disabled),
     flex-direction: column;
   }
 }
+
+.snapshot-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.snapshot-bar select {
+  min-width: 220px;
+}
+

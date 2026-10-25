@@ -7,7 +7,6 @@ import {
   BarChart3,
   BrainCircuit,
   CheckCircle2,
-  FileText,
   Flame,
   History,
   Image as ImageIcon,
@@ -26,6 +25,7 @@ import {
 } from "lucide-react";
 import {
   GeoJSON,
+  ImageOverlay,
   MapContainer,
   Marker,
   Popup,
@@ -35,10 +35,9 @@ import {
 } from "react-leaflet";
 import {
   API_URL,
-  classifyFireImage,
   clearRoads,
   getAnalyticsSummary,
-  getFireModelStatus,
+  getFireStatistics,
   getPointRisk,
   getRiskHistory,
   getRoads,
@@ -47,7 +46,6 @@ import {
   getSettlements,
   getUploads,
   login,
-  preloadFireModel,
   uploadRoads,
   uploadTile,
 } from "./api";
@@ -56,10 +54,8 @@ const NAV_ITEMS = [
   { key: "dashboard", label: "Обзор", icon: LayoutDashboard },
   { key: "map", label: "Карта риска", icon: MapIcon },
   { key: "roads", label: "Дороги", icon: Route },
-  { key: "ai-fire", label: "ИИ-оценка снимка", icon: Flame },
   { key: "history", label: "История", icon: History },
   { key: "statistics", label: "Статистика", icon: BarChart3 },
-  { key: "documents", label: "Документы", icon: FileText },
   { key: "profile", label: "Личный кабинет", icon: UserRound },
 ];
 
@@ -73,15 +69,11 @@ const TAB_META = {
   },
   map: {
     title: "Карта риска",
-    subtitle: "Один модуль: формула или ИИ-модель",
+    subtitle: "Формула, ИИ по реестру ИСДМ и снимки на карте",
   },
   roads: {
     title: "Дороги",
     subtitle: "SHP-слой района и распознавание дорог по космоснимкам",
-  },
-  "ai-fire": {
-    title: "ИИ-оценка пожарной опасности",
-    subtitle: "Предобученная модель SigLIP2 оценивает риск по снимку",
   },
   history: {
     title: "История",
@@ -89,11 +81,7 @@ const TAB_META = {
   },
   statistics: {
     title: "Статистика",
-    subtitle: "Показатели распознавания дорожной сети",
-  },
-  documents: {
-    title: "Документы",
-    subtitle: "Исторические материалы для объяснения риска",
+    subtitle: "Пожароопасность по реестру ИСДМ и показатели дорожной сети",
   },
   profile: {
     title: "Личный кабинет",
@@ -353,15 +341,6 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                   <span>Формула или ИИ-модель</span>
                 </span>
               </button>
-              <button className="quick-action" onClick={() => onNavigate("ai-fire")}>
-                <span className="quick-action-icon">
-                  <Flame size={17} />
-                </span>
-                <span className="quick-action-body">
-                  <strong>Оценить снимок</strong>
-                  <span>Модель SigLIP2 по фото</span>
-                </span>
-              </button>
               <button className="quick-action" onClick={() => onNavigate("roads")}>
                 <span className="quick-action-icon">
                   <Layers size={17} />
@@ -417,6 +396,40 @@ function formatDate(value) {
 
 function MapClickHandler({ onClick }) {
   useMapEvents({ click: (event) => onClick(event.latlng) });
+  return null;
+}
+
+function BarList({ items }) {
+  const max = Math.max(1, ...items.map((item) => item.value));
+  return (
+    <div className="top-list">
+      {items.map((item) => (
+        <div className="top-item" key={item.label}>
+          <div>
+            <strong>{item.label}</strong>
+          </div>
+          <div className="top-bar-wrap">
+            <div className="top-bar" style={{ width: `${(item.value / max) * 100}%` }} />
+          </div>
+          <strong>{item.value.toLocaleString("ru-RU")}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SnapshotFitBounds({ bounds }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!bounds) return;
+    map.fitBounds(
+      [
+        [bounds[0], bounds[1]],
+        [bounds[2], bounds[3]],
+      ],
+      { padding: [20, 20] }
+    );
+  }, [map, bounds]);
   return null;
 }
 
@@ -1222,16 +1235,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [docFiles, setDocFiles] = useState([]);
-  const [docStatus, setDocStatus] = useState("");
-
-  const [fireFile, setFireFile] = useState(null);
-  const [firePreview, setFirePreview] = useState("");
-  const [fireResult, setFireResult] = useState(null);
-  const [fireStatus, setFireStatus] = useState(null);
-  const [fireError, setFireError] = useState("");
-  const [fireLoading, setFireLoading] = useState(false);
-  const [firePreloading, setFirePreloading] = useState(false);
+  const [lastUploadedSnapshot, setLastUploadedSnapshot] = useState(null);
+  const [mapSnapshotId, setMapSnapshotId] = useState(null);
+  const [fireStats, setFireStats] = useState(null);
+  const [fireStatsError, setFireStatsError] = useState("");
 
   const [roads, setRoads] = useState(null);
   const [roadsError, setRoadsError] = useState("");
@@ -1417,47 +1424,25 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!fireFile) {
-      setFirePreview("");
-      return undefined;
-    }
-    const previewUrl = URL.createObjectURL(fireFile);
-    setFirePreview(previewUrl);
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [fireFile]);
-
-  const needsFireStatus =
-    activeTab === "ai-fire" || (activeTab === "map" && riskMethod === "ai");
-
-  useEffect(() => {
-    if (!needsFireStatus || !token) return undefined;
+    if (!token || activeTab !== "statistics" || fireStats) return undefined;
     let cancelled = false;
-    setFireError("");
-    getFireModelStatus(token)
-      .then((status) => {
-        if (!cancelled) setFireStatus(status);
+    setFireStatsError("");
+    getFireStatistics(token)
+      .then((data) => {
+        if (!cancelled) setFireStats(data);
       })
       .catch((error) => {
         if (!cancelled) {
-          setFireError(error.message || "Не удалось получить статус модели.");
+          setFireStatsError(error.message || "Не удалось загрузить статистику пожаров.");
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [needsFireStatus, token]);
+  }, [token, activeTab, fireStats]);
 
-  useEffect(() => {
-    if (!needsFireStatus || !token || fireStatus?.state !== "loading") {
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      getFireModelStatus(token)
-        .then((status) => setFireStatus(status))
-        .catch((error) => setFireError(error.message || "Не удалось получить статус модели."));
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [needsFireStatus, token, fireStatus]);
+  const geoUploads = uploads.filter((item) => item.geo_bounds && item.overlay_url);
+  const snapshotUpload = geoUploads.find((item) => item.id === mapSnapshotId) || null;
 
   function handleLogin(result) {
     localStorage.setItem("token", result.access_token);
@@ -1495,14 +1480,6 @@ export default function App() {
     setAnalytics(null);
     setAiStatus("");
     setFile(null);
-    setDocFiles([]);
-    setDocStatus("");
-    setFireFile(null);
-    setFireResult(null);
-    setFireStatus(null);
-    setFireError("");
-    setFireLoading(false);
-    setFirePreloading(false);
   }
 
   function goTo(tab) {
@@ -1564,48 +1541,6 @@ export default function App() {
     }
   }
 
-  async function handleFirePreload() {
-    if (!token || firePreloading) return;
-    setFirePreloading(true);
-    setFireError("");
-    try {
-      const status = await preloadFireModel(token);
-      setFireStatus(status);
-    } catch (error) {
-      setFireError(error.message || "Не удалось запустить загрузку модели.");
-    } finally {
-      setFirePreloading(false);
-    }
-  }
-
-  async function handleFireClassify(event) {
-    event.preventDefault();
-    if (!fireFile || fireLoading) return;
-    setFireLoading(true);
-    setFireError("");
-    setFireResult(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", fireFile);
-      const result = await classifyFireImage(formData, token);
-      setFireResult(result);
-    } catch (error) {
-      setFireError(error.message || "Не удалось оценить снимок.");
-    } finally {
-      setFireLoading(false);
-    }
-  }
-
-  function handleDocUpload(event) {
-    event.preventDefault();
-    if (!docFiles.length) {
-      setDocStatus("Выберите файлы документов.");
-      return;
-    }
-    setDocStatus("Заготовка: загрузка документов будет подключена позже.");
-    setDocFiles([]);
-  }
-
   async function handleUploadSHP(event) {
     event.preventDefault();
     if (!uploadFiles.length || uploadLoading) return;
@@ -1643,7 +1578,7 @@ export default function App() {
   async function handleUploadTile(event) {
     event.preventDefault();
     if (!file) {
-      setAiError("Выберите PNG/JPG файл тайла.");
+      setAiError("Выберите PNG, JPG, TIFF или GeoTIFF файл.");
       return;
     }
     setAiError("");
@@ -1662,12 +1597,11 @@ export default function App() {
           ? "Снимок загружен. Дороги распознаны, маска готова."
           : "Снимок загружен."
       );
+      setLastUploadedSnapshot(uploaded || null);
       setFile(null);
       setTileForm({ title: "", z: "", x: "", y: "" });
       await loadUploads();
       await loadAnalytics();
-      setHistoryTab("uploads");
-      goTo("history");
     } catch (error) {
       setAiError(`Ошибка загрузки: ${error.message}`);
     } finally {
@@ -1809,21 +1743,6 @@ export default function App() {
                 </div>
               </div>
 
-              {roadsError && (
-                <Alert type="warning">
-                  <p>
-                    <strong>Дороги из SHP ещё не загружены.</strong> Расстояние до
-                    дороги вычисляется по слою карты; пока слой недоступен,
-                    используется резервный источник OSM. Для точного расчёта
-                    загрузите shapefile (.shp, .shx, .dbf, .prj) во вкладке
-                    «Дороги».
-                  </p>
-                  <p className="roads-hint-detail">{roadsError}</p>
-                  <button className="btn-sm" onClick={() => goTo("roads")}>
-                    Перейти к загрузке SHP
-                  </button>
-                </Alert>
-              )}
 
               {settlementsError && (
                 <Alert type="warning">
@@ -1834,6 +1753,30 @@ export default function App() {
                   </p>
                 </Alert>
               )}
+
+              <div className="snapshot-bar">
+                <label>
+                  Снимок на карте{" "}
+                  <select
+                    value={mapSnapshotId ?? ""}
+                    onChange={(event) =>
+                      setMapSnapshotId(event.target.value ? Number(event.target.value) : null)
+                    }
+                  >
+                    <option value="">Не показывать</option>
+                    {geoUploads.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {geoUploads.length === 0 && (
+                  <span className="muted">
+                    Загрузите GeoTIFF во вкладке «Дороги» — снимок появится на карте по своим координатам.
+                  </span>
+                )}
+              </div>
 
               <div className="map-with-explanation">
                 <div className="map">
@@ -1848,6 +1791,22 @@ export default function App() {
                       onToggle={() => setPlacingPoint((prev) => !prev)}
                     />
                     <RoadsFitBounds data={roads} />
+                    {snapshotUpload && (
+                      <>
+                        <ImageOverlay
+                          url={`${API_URL}${snapshotUpload.overlay_url}`}
+                          bounds={[
+                            [snapshotUpload.geo_bounds[0], snapshotUpload.geo_bounds[1]],
+                            [snapshotUpload.geo_bounds[2], snapshotUpload.geo_bounds[3]],
+                          ]}
+                          opacity={0.9}
+                        />
+                        <SnapshotFitBounds
+                          key={snapshotUpload.id}
+                          bounds={snapshotUpload.geo_bounds}
+                        />
+                      </>
+                    )}
                     {baseLayer === "scheme" ? (
                       <TileLayer
                         attribution="&copy; OpenStreetMap contributors"
@@ -1967,12 +1926,6 @@ export default function App() {
                         <Activity size={15} /> Формула
                       </button>
                       <button
-                        className={riskMethod === "ai" ? "method-btn active" : "method-btn"}
-                        onClick={() => handleMethodChange("ai")}
-                      >
-                        <BrainCircuit size={15} /> ИИ-модель
-                      </button>
-                      <button
                         className={riskMethod === "ml" ? "method-btn active" : "method-btn"}
                         onClick={() => handleMethodChange("ml")}
                       >
@@ -1982,44 +1935,15 @@ export default function App() {
                     <p className="method-note">
                       {riskMethod === "formula"
                         ? "Годовая вероятность по расстояниям до дороги и населённого пункта, измеренным на карте."
-                        : riskMethod === "ml"
-                          ? "Модель, обученная на реестре пожаров ИСДМ: дороги, посёлки, железные дороги, район и месяц."
-                          : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
+                        : "Модель, обученная на реестре пожаров ИСДМ: дороги, посёлки, железные дороги, район и месяц."}
                     </p>
-                    {riskMethod === "ai" && (
-                      <div className={`method-model-state ${fireStatus?.state || "unknown"}`}>
-                        <span>
-                          {!fireStatus
-                            ? "Проверка ИИ-модели…"
-                            : fireStatus.state === "ready"
-                              ? "ИИ-модель готова"
-                              : fireStatus.state === "loading"
-                                ? "ИИ-модель загружается…"
-                                : fireStatus.state === "disabled"
-                                  ? "ИИ-модель отключена"
-                                  : fireStatus.state === "error"
-                                    ? fireStatus.error || "Ошибка загрузки модели"
-                                    : "Модель ещё не подготовлена"}
-                        </span>
-                        {(fireStatus?.state === "not_loaded" ||
-                          fireStatus?.state === "error") && (
-                          <button
-                            className="btn-primary btn-sm"
-                            onClick={handleFirePreload}
-                            disabled={firePreloading}
-                          >
-                            {firePreloading ? "Запуск…" : "Подготовить"}
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {riskLoading ? (
                     <div className="explanation-placeholder">
                       <span className="spinner lg" />
-                      {riskMethod === "ai"
-                        ? "Классификация космоснимка участка…"
+                      {riskMethod === "ml"
+                        ? "Расчёт по модели реестра ИСДМ…"
                         : "Расчёт вероятности по слоям карты…"}
                     </div>
                   ) : riskError ? (
@@ -2090,14 +2014,10 @@ export default function App() {
                   ) : (
                     <div className="explanation-placeholder">
                       <span className="empty-state-icon">
-                        {riskMethod === "ai" ? (
-                          <BrainCircuit size={22} />
-                        ) : (
-                          <MapPinned size={22} />
-                        )}
+                        <MapPinned size={22} />
                       </span>
-                      {riskMethod === "ai"
-                        ? "Поставьте точку — модель классифицирует космоснимок участка."
+                      {riskMethod === "ml"
+                        ? "Поставьте точку — модель рассчитает вероятность по данным реестра ИСДМ."
                         : "Поставьте точку — расстояния до дороги и населённого пункта будут измерены по слоям карты."}
                     </div>
                   )}
@@ -2228,16 +2148,30 @@ export default function App() {
                   </div>
                   <input
                     type="file"
-                    accept=".png,.jpg,.jpeg"
+                    accept=".png,.jpg,.jpeg,.tif,.tiff"
                     onChange={(event) => setFile(event.target.files?.[0] || null)}
                     disabled={!canUpload}
                   />
+                  <p className="muted">
+                    PNG, JPG, TIFF или GeoTIFF. Для GeoTIFF координаты берутся из файла.
+                  </p>
                   <button type="submit" disabled={!canUpload || isLoading}>
                     {isLoading ? "Распознавание…" : "Распознать дороги"}
                   </button>
                 </form>
                 {aiStatus && <Alert type="success">{aiStatus}</Alert>}
                 {aiError && <Alert type="error">{aiError}</Alert>}
+                {lastUploadedSnapshot?.geo_bounds && (
+                  <button
+                    className="btn-primary btn-sm"
+                    onClick={() => {
+                      setMapSnapshotId(lastUploadedSnapshot.id);
+                      goTo("map");
+                    }}
+                  >
+                    <MapIcon size={15} /> Показать снимок на карте
+                  </button>
+                )}
                 <button
                   className="btn-ghost btn-sm"
                   onClick={() => {
@@ -2290,253 +2224,68 @@ export default function App() {
             </section>
           )}
 
-          {activeTab === "ai-fire" && (
-            <section className="fire-layout">
-              <article className="card">
-                <div className="card-head">
-                  <div>
-                    <h2>Пожарная опасность по снимку</h2>
-                    <p className="muted">
-                      Загрузите космоснимок или фото участка — предобученная модель
-                      определит класс пожарной опасности.
-                    </p>
-                  </div>
-                  <span className="model-pill">
-                    <Flame size={14} /> SigLIP2
-                  </span>
-                </div>
-
-                <div className={`model-status ${fireStatus?.state || "unknown"}`}>
-                  <span className="model-status-icon">
-                    {fireStatus?.state === "ready" ? (
-                      <CheckCircle2 size={18} />
-                    ) : fireStatus?.state === "loading" ? (
-                      <span className="spinner" />
-                    ) : fireStatus?.state === "error" ? (
-                      <AlertTriangle size={18} />
-                    ) : (
-                      <Info size={18} />
-                    )}
-                  </span>
-                  <div className="model-status-body">
-                    <strong>
-                      {!fireStatus
-                        ? "Проверка модели…"
-                        : fireStatus.state === "ready"
-                          ? "Модель готова"
-                          : fireStatus.state === "loading"
-                            ? "Загрузка модели…"
-                            : fireStatus.state === "error"
-                              ? "Модель не загрузилась"
-                              : fireStatus.state === "disabled"
-                                ? "Модель отключена"
-                                : "Модель ещё не загружена"}
-                    </strong>
-                    <span>
-                      {!fireStatus
-                        ? "Проверяем состояние модели на сервере."
-                        : fireStatus.state === "ready"
-                          ? "Веса загружены — можно оценивать снимки."
-                          : fireStatus.state === "loading"
-                            ? "Первый запуск скачивает ~370 МБ. Это может занять несколько минут."
-                            : fireStatus.state === "error"
-                              ? fireStatus.error || "Не удалось загрузить веса модели."
-                              : fireStatus.state === "disabled"
-                                ? "На сервере установлено FIRE_RISK_MODEL_ENABLED=0."
-                                : "Первый запуск скачает ~370 МБ и подготовит модель."}
-                    </span>
-                  </div>
-                  {(fireStatus?.state === "not_loaded" ||
-                    fireStatus?.state === "error") && (
-                    <button
-                      className="btn-primary btn-sm"
-                      onClick={handleFirePreload}
-                      disabled={firePreloading}
-                    >
-                      {firePreloading
-                        ? "Запуск…"
-                        : fireStatus.state === "error"
-                          ? "Повторить"
-                          : "Подготовить модель"}
-                    </button>
-                  )}
-                </div>
-
-                <form onSubmit={handleFireClassify} className="upload-form">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => setFireFile(event.target.files?.[0] || null)}
-                    disabled={fireLoading}
-                  />
-                  {firePreview && (
-                    <div className="fire-preview">
-                      <img src={firePreview} alt="Предпросмотр снимка" />
-                    </div>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={
-                      !fireFile || fireLoading || fireStatus?.state !== "ready"
-                    }
-                  >
-                    {fireLoading ? "Анализ снимка…" : "Оценить пожарную опасность"}
-                  </button>
-                </form>
-
-                {fireError && <Alert type="error">{fireError}</Alert>}
-
-                <p className="fire-model-note">
-                  Модель: prithivMLmods/Fire-Risk-Detection (SigLIP2, Apache-2.0).
-                  Она оценивает характер подстилающей поверхности на снимке, а не
-                  прогнозирует возгорание в конкретной точке. Для точечного прогноза
-                  используйте карту риска.
-                </p>
-              </article>
-
-              <article className="card">
-                <h2>Результат модели</h2>
-                {!fireResult ? (
-                  <EmptyState
-                    icon={Flame}
-                    title="Снимок ещё не оценён"
-                    text="Выберите изображение и запустите оценку — здесь появятся класс пожарной опасности, уверенность модели и распределение вероятностей."
-                  />
-                ) : !fireResult.available ? (
-                  <Alert type="warning">
-                    {fireResult.reason || "Модель недоступна."}
-                  </Alert>
-                ) : (
-                  <div className="fire-result">
-                    <div className={`fire-hero ${fireResult.risk_level}`}>
-                      <span className="fire-hero-icon">
-                        <Flame size={26} />
-                      </span>
-                      <div className="fire-hero-main">
-                        <span className="fire-hero-label">Класс модели</span>
-                        <strong>{fireResult.predicted_ru}</strong>
-                        <span className="muted">
-                          Уверенность{" "}
-                          {((fireResult.confidence || 0) * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="fire-score">
-                        <strong>
-                          {Math.round((fireResult.risk_score || 0) * 100)}%
-                        </strong>
-                        <span>индекс риска</span>
-                      </div>
-                    </div>
-
-                    <div className="fire-facts">
-                      <div>
-                        <span>Уровень</span>
-                        <RiskBadge level={fireResult.risk_level} />
-                      </div>
-                      <div>
-                        <span>Модель</span>
-                        <strong>{fireResult.model_id}</strong>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3>Распределение классов</h3>
-                      <div className="fire-prob-list">
-                        {(fireResult.probabilities || []).map((item) => (
-                          <div className="fire-prob-row" key={item.label}>
-                            <span>{item.label_ru}</span>
-                            <div className="fire-prob-track">
-                              <div
-                                className="fire-prob-fill"
-                                style={{
-                                  width: `${Math.max(item.probability * 100, 1)}%`,
-                                }}
-                              />
-                            </div>
-                            <span className="fire-prob-value">
-                              {(item.probability * 100).toFixed(1)}%
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <p className="fire-model-note">
-                      Индекс риска — вероятностно взвешенная оценка классов
-                      (от воды и негорючих поверхностей до очень высокой
-                      опасности). Это вспомогательная оценка, а не официальный
-                      прогноз.
-                    </p>
-                  </div>
-                )}
-              </article>
-            </section>
-          )}
-
-          {activeTab === "documents" && (
-            <section className="grid">
-              <article className="card">
-                <h2>Загрузка документов</h2>
-                <p className="muted">
-                  Заготовка модуля. Здесь будет загрузка исторических документов, которые ИИ
-                  использует для объяснения процента риска.
-                </p>
-                <form onSubmit={handleDocUpload} className="upload-form">
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx,.txt,.md,.json,.csv"
-                    onChange={(event) => setDocFiles(Array.from(event.target.files || []))}
-                  />
-                  {docFiles.length > 0 && (
-                    <div className="history">
-                      {docFiles.map((fileItem, index) => (
-                        <div className="history-item" key={index}>
-                          <strong>{fileItem.name}</strong>
-                          <span>{(fileItem.size / 1024).toFixed(1)} КБ</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button type="submit" disabled={docFiles.length === 0}>
-                    Загрузить
-                  </button>
-                </form>
-                {docStatus && <Alert type="info">{docStatus}</Alert>}
-              </article>
-
-              <article className="card">
-                <h2>Зачем нужны документы</h2>
-                <p className="muted">
-                  Исторические отчёты, регламенты и сводки помогают ИИ объяснять расчёт
-                  риска: какие факторы уже приводили к возгораниям в этом районе.
-                </p>
-                <div className="list">
-                  <div className="list-row">
-                    <span className="list-icon">
-                      <FileText size={16} />
-                    </span>
-                    <div className="list-main">
-                      <div className="list-title">Поддерживаемые форматы</div>
-                      <div className="list-sub">PDF, DOC/DOCX, TXT, MD, JSON, CSV</div>
-                    </div>
-                  </div>
-                  <div className="list-row">
-                    <span className="list-icon">
-                      <ShieldCheck size={16} />
-                    </span>
-                    <div className="list-main">
-                      <div className="list-title">Прозрачность</div>
-                      <div className="list-sub">Ссылки на источник в ответе ИИ</div>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            </section>
-          )}
-
           {activeTab === "statistics" && (
             <section className="statistics-layout">
+              <article className="card">
+                <h2>Пожароопасность: реестр ИСДМ</h2>
+                {fireStatsError && <Alert type="error">{fireStatsError}</Alert>}
+                {!fireStats ? (
+                  !fireStatsError && (
+                    <div className="loading-block">
+                      <span className="spinner" /> Загрузка статистики…
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <div className="kpi-grid">
+                      <div className="kpi-item">
+                        <span>Пожаров за период</span>
+                        <strong>{fireStats.total_fires.toLocaleString("ru-RU")}</strong>
+                      </div>
+                      <div className="kpi-item">
+                        <span>Период</span>
+                        <strong>
+                          {fireStats.first_year}–{fireStats.last_year}
+                        </strong>
+                      </div>
+                      <div className="kpi-item">
+                        <span>Пройденная площадь, га</span>
+                        <strong>{Math.round(fireStats.total_area_ha).toLocaleString("ru-RU")}</strong>
+                      </div>
+                      <div className="kpi-item">
+                        <span>Средняя площадь пожара, га</span>
+                        <strong>{Math.round(fireStats.mean_area_ha).toLocaleString("ru-RU")}</strong>
+                      </div>
+                    </div>
+                    <h3>Пожары по годам</h3>
+                    <BarList
+                      items={fireStats.by_year.map((row) => ({
+                        label: String(row.year),
+                        value: row.fires,
+                      }))}
+                    />
+                    <h3>Пожары по месяцам</h3>
+                    <BarList
+                      items={fireStats.by_month.map((row) => ({
+                        label: row.month,
+                        value: row.fires,
+                      }))}
+                    />
+                    <h3>Районы: топ-10 по числу пожаров</h3>
+                    <BarList
+                      items={fireStats.by_district.slice(0, 10).map((row) => ({
+                        label: row.name,
+                        value: row.fires,
+                      }))}
+                    />
+                    <p className="chart-caption">
+                      Реестр ИСДМ-Рослесхоза: пожары больше 200 га. Данные за 2023 год
+                      неполные (29 записей).
+                    </p>
+                  </>
+                )}
+              </article>
+
               <article className="card stats-kpis">
                 <h2>Статистика</h2>
                 <div className="kpi-grid">

@@ -142,6 +142,17 @@ export async function getOsmRoads(token, lat, lon, radiusM = 5000) {
   return parseResponse(response);
 }
 
+export async function getFireStatistics(token) {
+  const response = await fetchWithTimeout(
+    `${API_URL}/stats/fires`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    30000
+  );
+  return parseResponse(response);
+}
+
 export async function getFireModelStatus(token) {
   const response = await fetchWithTimeout(`${API_URL}/ai/fire-risk/status`, {
     headers: { Authorization: `Bearer ${token}` },
