@@ -21,6 +21,7 @@ class PointRiskOut(BaseModel):
     road_distance_m: float | None = None
     settlement_distance_m: float | None = None
     road_influence: float
+    road_source: str | None = None
     base_probability: float
     fire_probability: float
     risk_level: str

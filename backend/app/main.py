@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .analytics import build_analytics_summary
 from .auth import create_access_token, decode_token, hash_password, verify_password
-from .config import ALPHA, METRIC_CRS, R0_METERS, ROADS_SHP_PATH
+from .config import METRIC_CRS, R0_METERS, ROADS_SHP_PATH
 from .database import (
     PREDICTION_DIR,
     SessionLocal,
@@ -26,7 +26,7 @@ from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
 from .fire_risk import (
     base_probability_breakdown,
-    calculate_fire_probability_breakdown,
+    final_probability,
     risk_level_from_probability,
 )
 from .gis import select_metric_crs, to_metric
@@ -39,7 +39,6 @@ from .road_data import (
     get_roads_cache,
     invalidate_roads_cache,
 )
-from .road_influence import road_influence
 from .schemas import (
     AnalyticsSummaryOut,
     FireRiskRecordOut,
@@ -260,24 +259,28 @@ def clear_roads(current_user: User = Depends(get_current_user)) -> dict:
     return {"removed": removed, "uploaded": False}
 
 
+_ROAD_SOURCE_LABELS = {"shp": "SHP", "osm": "OSM (резерв)", "none": "нет данных"}
+
+
 def _build_risk_reason(
     p_fire: float,
     p_base: float,
     influence: float,
     road_distance_m: float | None,
     r0_m: float,
-    alpha: float,
+    road_source: str,
 ) -> str:
     percent = p_fire * 100.0
     road_txt = (
         f"ближайшая дорога в {road_distance_m:.0f} м"
         if road_distance_m is not None
-        else "нет данных о дорогах (SHP)"
+        else "нет данных о дорогах"
     )
+    source_txt = _ROAD_SOURCE_LABELS.get(road_source, road_source)
     return (
         f"Вероятность пожара {percent:.1f}% в течение года. "
-        f"Базовая вероятность {p_base * 100:.1f}%, влияние SHP-дороги {influence:.2f} "
-        f"(R0={r0_m:.0f} м, вес={alpha:.2f}), {road_txt}."
+        f"Логит-модель: P_base {p_base * 100:.1f}%, вклад дороги учтён в P_base "
+        f"(I(R)={influence:.2f}, R0={r0_m:.0f} м, источник {source_txt}), {road_txt}."
     )
 
 
@@ -296,85 +299,97 @@ def _build_risk_explanation(
     settlement_distance_m: float | None,
     influence: float,
     base: dict,
-    fire: dict,
     p_fire: float,
 ) -> dict:
     """Build a structured, per-factor explanation of one calculation."""
+    coefficients = base["coefficients"]
+    source_txt = _ROAD_SOURCE_LABELS.get(base["road_source"], base["road_source"])
     return {
-        "equation": "P_fire = P_base + α · I(R) · (1 − P_base)",
+        "equation": "P_fire = 1 / (1 + exp(−logit)),  logit = b0 + Σ b_i·x_i",
         "coordinates": {"lat": lat, "lon": lon},
         "base": {
-            "label": "Базовая вероятность P_base",
+            "label": "Вероятность P_fire (логит-модель)",
             "formula": (
-                "0.05 + 0.18·road + 0.20·settlement + 0.12·ρ_дорог "
-                "+ 0.08·ρ_поселений + 0.15·сезон + 0.10·суточ + 0.15·road·settlement"
+                f"{coefficients['constant']:.2f} "
+                f"+ {coefficients['road']:.2f}·дорога "
+                f"+ {coefficients['settlement']:.2f}·поселение "
+                f"+ {coefficients['road_density']:.2f}·ρ_дорог "
+                f"+ {coefficients['settlement_density']:.2f}·ρ_поселений "
+                f"+ {coefficients['season']:.2f}·сезон "
+                f"+ {coefficients['diurnal']:.2f}·суточ "
+                f"+ {coefficients['interaction']:.2f}·дорога·поселение"
             ),
             "result": base["p_base"],
+            "logit": base["logit"],
             "factors": [
-                {"name": "Константа (минимум)", "value": base["constant"], "note": "база"},
+                {"name": "Свободный член b0", "value": base["constant"], "note": "смещение логита"},
                 {
-                    "name": "Близость к дороге (OSM)",
+                    "name": "Близость к дороге",
                     "value": base["road_contribution"],
                     "input": base["road_distance_m"],
-                    "note": "0.18·exp(−d/1000 м)",
+                    "note": (
+                        f"{coefficients['road']:.2f}·I(R), источник {source_txt}"
+                    ),
                 },
                 {
                     "name": "Близость к поселению",
                     "value": base["settlement_contribution"],
                     "input": base["settlement_distance_m"],
-                    "note": "0.20·exp(−d/3000 м)",
+                    "note": (
+                        f"{coefficients['settlement']:.2f}·exp(−d/3000 м)"
+                    ),
                 },
                 {
                     "name": "Плотность дорог",
                     "value": base["road_density_contribution"],
                     "input": base["road_density"],
-                    "note": "0.12·ρ_дорог",
+                    "note": f"{coefficients['road_density']:.2f}·ρ_дорог",
                 },
                 {
                     "name": "Плотность поселений",
                     "value": base["settlement_density_contribution"],
                     "input": base["settlement_density"],
-                    "note": "0.08·ρ_поселений",
+                    "note": f"{coefficients['settlement_density']:.2f}·ρ_поселений",
                 },
                 {
                     "name": "Сезонный фактор",
                     "value": base["season_contribution"],
                     "input": base["season"],
-                    "note": f"0.15·сезон (месяц {base['season_month']})",
+                    "note": (
+                        f"{coefficients['season']:.2f}·сезон "
+                        f"(месяц {base['season_month']})"
+                    ),
                 },
                 {
                     "name": "Суточный фактор",
                     "value": base["diurnal_contribution"],
                     "input": base["diurnal"],
-                    "note": "0.10·пик (15:00)",
+                    "note": f"{coefficients['diurnal']:.2f}·пик (15:00)",
                 },
                 {
                     "name": "Взаимодействие дорога×поселение",
                     "value": base["interaction_contribution"],
                     "input": base["interaction"],
-                    "note": "0.15·road·settlement",
+                    "note": f"{coefficients['interaction']:.2f}·дорога·поселение",
                 },
             ],
         },
         "road": {
-            "label": "Влияние SHP-дороги I(R)",
+            "label": "Дорога в модели (учтена в P_base)",
             "formula": "I(R) = 1 / (1 + R / R0)",
             "R": road_distance_m,
-            "R0": R0_METERS,
-            "alpha": ALPHA,
+            "R0": base["road_r0_m"],
+            "source": base["road_source"],
             "result": influence,
         },
         "final": {
             "label": "Итоговая вероятность P_fire",
-            "formula": "P_fire = P_base + α · I(R) · (1 − P_base)",
+            "formula": "P_fire = P_base (вклад дороги уже внутри логита)",
             "result": p_fire,
             "terms": [
-                {"name": "P_base", "value": fire["p_base"]},
-                {"name": "I(R)", "value": fire["influence"]},
-                {"name": "α (вес SHP)", "value": fire["alpha"]},
-                {"name": "1 − P_base", "value": fire["one_minus_p_base"]},
-                {"name": "α · I(R) · (1−P_base)", "value": fire["shp_addition"]},
-                {"name": "P_fire", "value": fire["p_fire"]},
+                {"name": "logit(P)", "value": base["logit"]},
+                {"name": "P_base", "value": base["p_base"]},
+                {"name": "P_fire", "value": p_fire},
             ],
         },
     }
@@ -405,9 +420,9 @@ def point_risk(
     point_metric = Point(x, y)
 
     r = distance_to_nearest_road(point_metric, roads_metric, cache.tree)
-    influence = road_influence(r, R0_METERS)
 
-    # P_base model (OSM road/settlement context + seasonal/daytime factors).
+    # Single logistic model: OSM settlement/density context, season and time of
+    # day, with the road factor taken from the SHP layer (OSM as fallback).
     osm_context = nearest_distances_from_osm(lat, lon)
     base = base_probability_breakdown(
         road_distance_m=osm_context["road_distance_m"],
@@ -416,11 +431,12 @@ def point_risk(
         settlement_density=float(osm_context["settlement_density"] or 0.0),
         now_utc=datetime.utcnow(),
         lon=lon,
+        road_distance_shp_m=r,
+        road_r0_m=R0_METERS,
     )
+    influence = base["road_proximity"]
     p_base = base["p_base"]
-
-    fire = calculate_fire_probability_breakdown(p_base, influence, ALPHA)
-    p_fire = fire["p_fire"]
+    p_fire = final_probability(p_base)
     level = risk_level_from_probability(p_fire * 100.0)
 
     explanation = _build_risk_explanation(
@@ -430,7 +446,6 @@ def point_risk(
         settlement_distance_m=osm_context["settlement_distance_m"],
         influence=influence,
         base=base,
-        fire=fire,
         p_fire=p_fire,
     )
     summary = _build_risk_summary(lat, lon, p_fire)
@@ -453,10 +468,13 @@ def point_risk(
         road_distance_m=r,
         settlement_distance_m=osm_context["settlement_distance_m"],
         road_influence=influence,
+        road_source=base["road_source"],
         base_probability=p_base,
         fire_probability=p_fire,
         risk_level=level,
-        risk_reason=_build_risk_reason(p_fire, p_base, influence, r, R0_METERS, ALPHA),
+        risk_reason=_build_risk_reason(
+            p_fire, p_base, influence, r, R0_METERS, base["road_source"]
+        ),
         summary=summary,
         explanation=explanation,
     )
