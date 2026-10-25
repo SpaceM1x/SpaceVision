@@ -1,28 +1,43 @@
-"""Fire probability model.
+"""Fire probability model (logistic / log-odds form).
 
-P_base combines normalised [0,1] OSM factors (road/settlement proximity,
-densities, season, diurnal, interaction) and is clamped to [0, 0.90]. The SHP
-influence adds up to ~30 p.p.:
+``P_base`` is a logistic model over normalised ``[0, 1]`` features:
 
-    P_fire = P_base + alpha * I(R) * (1 - P_base)
+    logit(P) = B0 + B_ROAD·x_road + B_SETTLEMENT·x_settlement
+                  + B_ROAD_DENSITY·ρ_roads + B_SETTLEMENT_DENSITY·ρ_settlements
+                  + B_SEASON·season + B_DIURNAL·diurnal
+                  + B_INTERACTION·x_road·x_settlement
+
+    P_base = 1 / (1 + exp(−logit(P)))
+
+Roads are accounted exactly once: ``x_road`` uses the SHP road distance when
+the uploaded layer is available (authoritative) and falls back to the OSM
+distance otherwise. The legacy additive term ``alpha·I(R)·(1 − P_base)`` is
+gone, so the final probability is ``P_fire = P_base``.
+
+The coefficients below are provisional hand-set log-odds weights. They keep
+the model monotonic and bounded, and are meant to be replaced by coefficients
+fitted/calibrated on historical fire data.
 """
 from __future__ import annotations
 
 import math
 from datetime import datetime
 
-# Base-model coefficients.
-BASE_CONSTANT = 0.05
-ROAD_PROXIMITY_WEIGHT = 0.18
-ROAD_PROXIMITY_SCALE = 1000.0  # metres
-SETTLEMENT_PROXIMITY_WEIGHT = 0.20
+from .road_influence import road_influence
+
+# Logistic coefficients (log-odds units).
+B0 = -2.7
+B_ROAD = 0.55
+B_SETTLEMENT = 0.65
+B_ROAD_DENSITY = 0.35
+B_SETTLEMENT_DENSITY = 0.25
+B_SEASON = 0.60
+B_DIURNAL = 0.40
+B_INTERACTION = 0.50
+
+# Default road-influence scale used when no explicit R0 is supplied.
+DEFAULT_ROAD_R0_METERS = 500.0
 SETTLEMENT_PROXIMITY_SCALE = 3000.0  # metres
-ROAD_DENSITY_WEIGHT = 0.12
-SETTLEMENT_DENSITY_WEIGHT = 0.08
-SEASON_WEIGHT = 0.15
-DIURNAL_WEIGHT = 0.10
-INTERACTION_WEIGHT = 0.15
-MAX_BASE_PROBABILITY = 0.90
 
 # Continental-climate monthly risk weights.
 _SEASONAL_WEIGHTS = {
@@ -41,6 +56,14 @@ def _clamp01(value: float) -> float:
     return _clamp(value, 0.0, 1.0)
 
 
+def _sigmoid(value: float) -> float:
+    """Numerically stable logistic function."""
+    if value >= 0.0:
+        return 1.0 / (1.0 + math.exp(-value))
+    exponent = math.exp(value)
+    return exponent / (1.0 + exponent)
+
+
 def _seasonal_factor(month: int) -> float:
     """Normalised ``[0, 1]`` seasonal factor for the continental climate."""
     weight = _SEASONAL_WEIGHTS.get(month, 0.0)
@@ -53,6 +76,17 @@ def _diurnal_factor(utc_dt: datetime, lon: float) -> float:
     return math.exp(-((local_hour - 15.0) ** 2) / (2 * 3.2**2))
 
 
+def _effective_road_distance(
+    road_distance_m: float | None, road_distance_shp_m: float | None
+) -> tuple[float | None, str]:
+    """Pick one road distance: the SHP layer wins over the OSM fallback."""
+    if road_distance_shp_m is not None:
+        return road_distance_shp_m, "shp"
+    if road_distance_m is not None:
+        return road_distance_m, "osm"
+    return None, "none"
+
+
 def _base_components(
     *,
     road_distance_m: float | None,
@@ -61,11 +95,16 @@ def _base_components(
     settlement_density: float,
     now_utc: datetime,
     lon: float,
+    road_distance_shp_m: float | None = None,
+    road_r0_m: float = DEFAULT_ROAD_R0_METERS,
 ) -> dict:
-    """Compute every factor of the ``P_base`` model and the resulting value."""
+    """Compute every logit feature of the model and the resulting probability."""
+    effective_road_distance, road_source = _effective_road_distance(
+        road_distance_m, road_distance_shp_m
+    )
     road_proximity = (
-        math.exp(-road_distance_m / ROAD_PROXIMITY_SCALE)
-        if road_distance_m is not None
+        road_influence(effective_road_distance, road_r0_m)
+        if effective_road_distance is not None
         else 0.0
     )
     settlement_proximity = (
@@ -79,16 +118,29 @@ def _base_components(
     diurnal = _diurnal_factor(now_utc, lon)
     interaction = road_proximity * settlement_proximity
 
-    road_contribution = ROAD_PROXIMITY_WEIGHT * road_proximity
-    settlement_contribution = SETTLEMENT_PROXIMITY_WEIGHT * settlement_proximity
-    road_density_contribution = ROAD_DENSITY_WEIGHT * road_density
-    settlement_density_contribution = SETTLEMENT_DENSITY_WEIGHT * settlement_density
-    season_contribution = SEASON_WEIGHT * season
-    diurnal_contribution = DIURNAL_WEIGHT * diurnal
-    interaction_contribution = INTERACTION_WEIGHT * interaction
+    coefficients = {
+        "constant": B0,
+        "road": B_ROAD,
+        "settlement": B_SETTLEMENT,
+        "road_density": B_ROAD_DENSITY,
+        "settlement_density": B_SETTLEMENT_DENSITY,
+        "season": B_SEASON,
+        "diurnal": B_DIURNAL,
+        "interaction": B_INTERACTION,
+    }
 
-    raw_sum = (
-        BASE_CONSTANT
+    # Per-factor contributions in log-odds units.
+    constant = B0
+    road_contribution = B_ROAD * road_proximity
+    settlement_contribution = B_SETTLEMENT * settlement_proximity
+    road_density_contribution = B_ROAD_DENSITY * road_density
+    settlement_density_contribution = B_SETTLEMENT_DENSITY * settlement_density
+    season_contribution = B_SEASON * season
+    diurnal_contribution = B_DIURNAL * diurnal
+    interaction_contribution = B_INTERACTION * interaction
+
+    logit = (
+        constant
         + road_contribution
         + settlement_contribution
         + road_density_contribution
@@ -97,10 +149,14 @@ def _base_components(
         + diurnal_contribution
         + interaction_contribution
     )
-    p_base = _clamp(raw_sum, 0.0, MAX_BASE_PROBABILITY)
+    p_base = _sigmoid(logit)
 
     return {
-        "road_distance_m": road_distance_m,
+        "road_distance_m": effective_road_distance,
+        "road_distance_osm_m": road_distance_m,
+        "road_distance_shp_m": road_distance_shp_m,
+        "road_source": road_source,
+        "road_r0_m": road_r0_m,
         "settlement_distance_m": settlement_distance_m,
         "road_proximity": road_proximity,
         "settlement_proximity": settlement_proximity,
@@ -110,7 +166,8 @@ def _base_components(
         "season": season,
         "diurnal": diurnal,
         "interaction": interaction,
-        "constant": BASE_CONSTANT,
+        "coefficients": coefficients,
+        "constant": constant,
         "road_contribution": road_contribution,
         "settlement_contribution": settlement_contribution,
         "road_density_contribution": road_density_contribution,
@@ -118,7 +175,7 @@ def _base_components(
         "season_contribution": season_contribution,
         "diurnal_contribution": diurnal_contribution,
         "interaction_contribution": interaction_contribution,
-        "raw_sum": raw_sum,
+        "logit": logit,
         "p_base": p_base,
     }
 
@@ -131,8 +188,10 @@ def base_probability(
     settlement_density: float,
     now_utc: datetime,
     lon: float,
+    road_distance_shp_m: float | None = None,
+    road_r0_m: float = DEFAULT_ROAD_R0_METERS,
 ) -> float:
-    """Return the base ignition probability ``P_base`` in ``[0, 0.90]``."""
+    """Return the logistic probability ``P_base`` in ``(0, 1)``."""
     return _base_components(
         road_distance_m=road_distance_m,
         settlement_distance_m=settlement_distance_m,
@@ -140,6 +199,8 @@ def base_probability(
         settlement_density=settlement_density,
         now_utc=now_utc,
         lon=lon,
+        road_distance_shp_m=road_distance_shp_m,
+        road_r0_m=road_r0_m,
     )["p_base"]
 
 
@@ -151,8 +212,10 @@ def base_probability_breakdown(
     settlement_density: float,
     now_utc: datetime,
     lon: float,
+    road_distance_shp_m: float | None = None,
+    road_r0_m: float = DEFAULT_ROAD_R0_METERS,
 ) -> dict:
-    """Return the full ``P_base`` breakdown (each additive factor + the result)."""
+    """Return the full model breakdown (logit, each factor, the result)."""
     return _base_components(
         road_distance_m=road_distance_m,
         settlement_distance_m=settlement_distance_m,
@@ -160,32 +223,14 @@ def base_probability_breakdown(
         settlement_density=settlement_density,
         now_utc=now_utc,
         lon=lon,
+        road_distance_shp_m=road_distance_shp_m,
+        road_r0_m=road_r0_m,
     )
 
 
-def calculate_fire_probability(p_base: float, influence: float, alpha: float) -> float:
-    """P_fire = P_base + alpha * I(R) * (1 - P_base)."""
-    return calculate_fire_probability_breakdown(p_base, influence, alpha)["p_fire"]
-
-
-def calculate_fire_probability_breakdown(p_base: float, influence: float, alpha: float) -> dict:
-    """Return each term of ``P_fire = P_base + alpha * I(R) * (1 - P_base)``."""
-    p_base = _clamp01(p_base)
-    influence = _clamp01(influence)
-    alpha = _clamp01(alpha)
-
-    one_minus_p_base = 1.0 - p_base
-    shp_addition = alpha * influence * one_minus_p_base
-    p_fire = _clamp01(p_base + shp_addition)
-
-    return {
-        "p_base": p_base,
-        "influence": influence,
-        "alpha": alpha,
-        "one_minus_p_base": one_minus_p_base,
-        "shp_addition": shp_addition,
-        "p_fire": p_fire,
-    }
+def final_probability(p_base: float) -> float:
+    """Return ``P_fire``: the road contribution is already inside ``P_base``."""
+    return _clamp01(p_base)
 
 
 def risk_level_from_probability(probability: float) -> str:

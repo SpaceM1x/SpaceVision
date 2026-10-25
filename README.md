@@ -29,26 +29,29 @@
 
 ## Формула расчёта риска
 
+Логистическая модель (коэффициенты — лог-шансовые веса, `b`):
+
 ```
-road_proximity       = exp(-d_road_osm / 1000)
-settlement_proximity = exp(-d_settlement / 3000)
+x_road       = 1 / (1 + d_road / R0)          # R0 = 500 м
+x_settlement = exp(-d_settlement / 3000)
 
-P_base = clamp(0.05
-        + 0.18·road_proximity
-        + 0.20·settlement_proximity
-        + 0.12·road_density
-        + 0.08·settlement_density
-        + 0.15·season
-        + 0.10·diurnal
-        + 0.15·road_proximity·settlement_proximity, 0, 0.90)
+logit(P) = b0 + b_road·x_road + b_settlement·x_settlement
+         + b_road_density·ρ_дорог + b_settlement_density·ρ_поселений
+         + b_season·сезон + b_diurnal·суточ
+         + b_interaction·x_road·x_settlement
 
-I(R)   = 1 / (1 + R / R0)          # R — расстояние до SHP-дороги, R0 = 500 м
-P_fire = P_base + alpha·I(R)·(1 − P_base)   # alpha = 0.30
+P_fire = 1 / (1 + exp(−logit(P)))
 ```
 
-- `d_road_osm`, `d_settlement`, `road_density`, `settlement_density` — контекст OSM (Overpass).
-- `season` — сезонный фактор `[0,1]` (июль — максимум, январь — минимум).
-- `diurnal` — суточный фактор `[0,1]` (пик в 15:00 местного времени).
+- `d_road` — расстояние до ближайшей дороги: из загруженного SHP (`I(R)`), а
+  при его отсутствии — из OSM. Дорога учитывается **один раз**: отдельного
+  аддитивного слагаемого `alpha·I(R)·(1−P_base)` больше нет, `P_fire = P_base`.
+- `d_settlement`, `ρ_дорог`, `ρ_поселений` — контекст OSM (Overpass).
+- `сезон` — сезонный фактор `[0,1]` (июль — максимум, январь — минимум).
+- `суточ` — суточный фактор `[0,1]` (пик в 15:00 местного времени).
+- Текущие коэффициенты заданы вручную и обеспечивают монотонность и
+  ограниченность `P ∈ (0,1)`; их следует заменить на обученные и
+  откалиброванные по историческим данным (например, очаги FIRMS).
 
 ## Структура
 
@@ -93,7 +96,6 @@ cd backend && python -m pytest
 |---|---|---|
 | `ROADS_SHP_PATH` | путь к Shapefile дорог | `gis/roads/roads.shp` |
 | `R0_METERS` | характерное расстояние влияния дороги | `500` |
-| `ALPHA` | вес влияния SHP-дороги | `0.30` |
 | `METRIC_CRS` | метрическая CRS (иначе UTM по центроиду) | пусто |
 
 ## Технологии

@@ -4,7 +4,7 @@ from pyproj import Transformer
 from shapely.geometry import Point
 
 from app.distance import distance_to_nearest_road
-from app.fire_risk import base_probability, calculate_fire_probability
+from app.fire_risk import base_probability, final_probability
 from app.gis import select_metric_crs, to_metric
 from app.road_data import RoadDataProvider
 from app.road_influence import road_influence
@@ -12,7 +12,6 @@ from app.road_influence import road_influence
 
 def test_integration_single_road(single_road_shp):
     r0 = 500.0
-    alpha = 0.15
 
     # 1) load SHP
     gdf = RoadDataProvider(single_road_shp).load()
@@ -30,7 +29,7 @@ def test_integration_single_road(single_road_shp):
     # 4) road influence
     influence = road_influence(r, r0)
 
-    # 5) fire probability
+    # 5) fire probability (the road factor is inside the logistic model)
     p_base = base_probability(
         road_distance_m=120.0,
         settlement_distance_m=450.0,
@@ -38,16 +37,18 @@ def test_integration_single_road(single_road_shp):
         settlement_density=0.58,
         now_utc=datetime(2026, 6, 15, 12, 0, 0),
         lon=108.0,
+        road_distance_shp_m=r,
+        road_r0_m=r0,
     )
-    p_fire = calculate_fire_probability(p_base, influence, alpha)
+    p_fire = final_probability(p_base)
 
     assert r < 5.0
     assert 0.99 < influence <= 1.0
     assert 0.0 <= p_fire <= 1.0
-    assert p_fire >= p_base
+    assert abs(p_fire - p_base) < 1e-12
 
 
-def test_end_to_end_risk_point(roads_shp, monkeypatch):
+def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     import os
     from fastapi.testclient import TestClient
     from sqlalchemy import create_engine
@@ -57,6 +58,14 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch):
     import app.main as main_mod
     from app.database import Base
     from app.models import User
+
+    # Never touch the real gis/roads/roads.shp: the upload endpoint writes to
+    # the module-level path, so redirect it into the test tmp dir.
+    target = tmp_path / "gis" / "roads" / "roads.shp"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(main_mod, "ROADS_SHP_PATH", target)
+    main_mod.invalidate_roads_cache()
+    request.addfinalizer(main_mod.invalidate_roads_cache)
 
     engine = create_engine(
         "sqlite://",
@@ -113,4 +122,7 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch):
     body = r.json()
     assert body["road_distance_m"] < 5.0
     assert 0.99 < body["road_influence"] <= 1.0
+    assert body["road_source"] == "shp"
+    # No double counting: the final probability equals the logistic P_base.
+    assert abs(body["fire_probability"] - body["base_probability"]) < 1e-12
 
