@@ -76,7 +76,7 @@ _CUTS = [cut for cut, _, _ in FORMULA_RISK_THRESHOLDS]
         (_CUTS[0], "low", "низкий"),
         (_CUTS[1] - 1e-9, "low", "низкий"),
         (_CUTS[1], "moderate", "средний"),
-        (_CUTS[2], "high", "высокий"),
+        (_CUTS[2], "high", "относительно высокий"),
         (_CUTS[3], "very_high", "очень высокий"),
         (10.0, "very_high", "очень высокий"),
     ],
