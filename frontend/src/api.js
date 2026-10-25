@@ -40,9 +40,13 @@ export async function login(username, password) {
 }
 
 export async function getRoads(token) {
-  const response = await fetchWithTimeout(`${API_URL}/roads/geojson`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const response = await fetchWithTimeout(
+    `${API_URL}/roads/geojson`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    60000
+  );
   return parseResponse(response);
 }
 
@@ -54,11 +58,15 @@ export async function getRoadsStatus(token) {
 }
 
 export async function uploadRoads(formData, token) {
-  const response = await fetchWithTimeout(`${API_URL}/roads/upload`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
+  const response = await fetchWithTimeout(
+    `${API_URL}/roads/upload`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+    120000
+  );
   return parseResponse(response);
 }
 
@@ -70,13 +78,13 @@ export async function clearRoads(token) {
   return parseResponse(response);
 }
 
-export async function getPointRisk(token, lat, lon) {
+export async function getPointRisk(token, lat, lon, method = "formula") {
   const response = await fetchWithTimeout(
-    `${API_URL}/risk/point?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+    `${API_URL}/risk/point?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&method=${encodeURIComponent(method)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     },
-    20000
+    120000
   );
   return parseResponse(response);
 }
@@ -118,11 +126,16 @@ export async function getUploads(token) {
 }
 
 export async function uploadTile(formData, token) {
-  const response = await fetchWithTimeout(`${API_URL}/uploads`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
+  // The first request may load the U-Net road model on the server.
+  const response = await fetchWithTimeout(
+    `${API_URL}/uploads`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+    600000
+  );
   return parseResponse(response);
 }
 

@@ -7,7 +7,6 @@ import {
   BarChart3,
   BrainCircuit,
   CheckCircle2,
-  ChevronDown,
   FileText,
   Flame,
   History,
@@ -51,30 +50,15 @@ import {
   uploadTile,
 } from "./api";
 
-const modeMenus = [
-  {
-    key: "ai",
-    label: "ИИ режим",
-    icon: BrainCircuit,
-    items: [
-      { key: "ai-maps", label: "Карта космоснимков", icon: MapIcon },
-      { key: "ai-upload", label: "Загрузка космоснимков", icon: Upload },
-      { key: "ai-fire", label: "ИИ-оценка пожарной опасности", icon: Flame },
-      { key: "ai-documents", label: "Загрузка документов", icon: FileText },
-      { key: "ai-statistics", label: "Статистика", icon: BarChart3 },
-      { key: "ai-history", label: "История загрузок", icon: History },
-    ],
-  },
-  {
-    key: "shape",
-    label: "Shape режим",
-    icon: Layers,
-    items: [
-      { key: "shape-maps", label: "Карта риска", icon: MapIcon },
-      { key: "shape-upload", label: "Загрузка SHP", icon: Upload },
-      { key: "shape-history", label: "История расчётов", icon: History },
-    ],
-  },
+const NAV_ITEMS = [
+  { key: "dashboard", label: "Обзор", icon: LayoutDashboard },
+  { key: "map", label: "Карта риска", icon: MapIcon },
+  { key: "roads", label: "Дороги", icon: Route },
+  { key: "ai-fire", label: "ИИ-оценка снимка", icon: Flame },
+  { key: "history", label: "История", icon: History },
+  { key: "statistics", label: "Статистика", icon: BarChart3 },
+  { key: "documents", label: "Документы", icon: FileText },
+  { key: "profile", label: "Личный кабинет", icon: UserRound },
 ];
 
 const DEFAULT_CENTER = [51.85, 108.27];
@@ -85,41 +69,29 @@ const TAB_META = {
     title: "Обзор",
     subtitle: "Сводка по снимкам, дорогам и расчётам риска",
   },
-  "ai-maps": {
-    title: "ИИ-режим · Карта космоснимков",
-    subtitle: "Дистанционное зондирование и оценка риска по точке",
+  map: {
+    title: "Карта риска",
+    subtitle: "Один модуль: расчёт по формуле или по ИИ-модели",
   },
-  "ai-upload": {
-    title: "ИИ-режим · Загрузка космоснимков",
-    subtitle: "Автоматическое распознавание дорог нейросетью U-Net",
+  roads: {
+    title: "Дороги",
+    subtitle: "SHP-слой района и распознавание дорог по космоснимкам",
   },
   "ai-fire": {
-    title: "ИИ-режим · Пожарная опасность",
-    subtitle: "Предобученная модель SigLIP2 оценивает риск по космоснимку",
+    title: "ИИ-оценка пожарной опасности",
+    subtitle: "Предобученная модель SigLIP2 оценивает риск по снимку",
   },
-  "ai-documents": {
-    title: "ИИ-режим · Документы",
-    subtitle: "Исторические материалы для объяснения риска",
+  history: {
+    title: "История",
+    subtitle: "Расчёты риска и обработанные космоснимки",
   },
-  "ai-statistics": {
-    title: "ИИ-режим · Статистика",
+  statistics: {
+    title: "Статистика",
     subtitle: "Показатели распознавания дорожной сети",
   },
-  "ai-history": {
-    title: "ИИ-режим · История загрузок",
-    subtitle: "Обработанные снимки, маски и оверлеи",
-  },
-  "shape-maps": {
-    title: "Shape-режим · Карта риска",
-    subtitle: "Расчёт вероятности пожара по дорожной сети из Shapefile",
-  },
-  "shape-upload": {
-    title: "Shape-режим · Загрузка SHP",
-    subtitle: "Управление слоем дорог Заиграевского района",
-  },
-  "shape-history": {
-    title: "Shape-режим · История расчётов",
-    subtitle: "Все расчёты риска с полным объяснением",
+  documents: {
+    title: "Документы",
+    subtitle: "Исторические материалы для объяснения риска",
   },
   profile: {
     title: "Личный кабинет",
@@ -218,7 +190,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
             Заиграевский район · мониторинг дорожной сети и риска лесных пожаров
           </p>
         </div>
-        <button className="btn-primary" onClick={() => onNavigate("ai-upload")}>
+        <button className="btn-primary" onClick={() => onNavigate("roads")}>
           <Upload size={16} /> Загрузить снимок
         </button>
       </div>
@@ -257,7 +229,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
           <section className="card">
             <div className="card-head">
               <h2>Последние снимки</h2>
-              <button className="btn-ghost btn-sm" onClick={() => onNavigate("ai-history")}>
+              <button className="btn-ghost btn-sm" onClick={() => onNavigate("history")}>
                 Все снимки <ArrowRight size={14} />
               </button>
             </div>
@@ -267,7 +239,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                 title="Снимков пока нет"
                 text="Загрузите космоснимок — нейросеть распознает дороги и построит маску."
                 action={
-                  <button className="btn-primary btn-sm" onClick={() => onNavigate("ai-upload")}>
+                  <button className="btn-primary btn-sm" onClick={() => onNavigate("roads")}>
                     Загрузить первый снимок
                   </button>
                 }
@@ -295,7 +267,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
           <section className="card">
             <div className="card-head">
               <h2>Последние расчёты риска</h2>
-              <button className="btn-ghost btn-sm" onClick={() => onNavigate("shape-history")}>
+              <button className="btn-ghost btn-sm" onClick={() => onNavigate("history")}>
                 Вся история <ArrowRight size={14} />
               </button>
             </div>
@@ -305,7 +277,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                 title="Расчётов ещё не было"
                 text="Поставьте точку на карте риска — система рассчитает вероятность пожара и объяснит факторы."
                 action={
-                  <button className="btn-primary btn-sm" onClick={() => onNavigate("shape-maps")}>
+                  <button className="btn-primary btn-sm" onClick={() => onNavigate("map")}>
                     Открыть карту риска
                   </button>
                 }
@@ -335,7 +307,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
               <h2>Быстрые действия</h2>
             </div>
             <div className="quick-actions">
-              <button className="quick-action" onClick={() => onNavigate("ai-upload")}>
+              <button className="quick-action" onClick={() => onNavigate("roads")}>
                 <span className="quick-action-icon">
                   <Upload size={17} />
                 </span>
@@ -344,13 +316,13 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                   <span>U-Net распознает дороги</span>
                 </span>
               </button>
-              <button className="quick-action" onClick={() => onNavigate("shape-maps")}>
+              <button className="quick-action" onClick={() => onNavigate("map")}>
                 <span className="quick-action-icon">
                   <MapPinned size={17} />
                 </span>
                 <span className="quick-action-body">
                   <strong>Рассчитать риск</strong>
-                  <span>Клик по точке на карте</span>
+                  <span>Формула или ИИ-модель</span>
                 </span>
               </button>
               <button className="quick-action" onClick={() => onNavigate("ai-fire")}>
@@ -362,7 +334,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                   <span>Модель SigLIP2 по фото</span>
                 </span>
               </button>
-              <button className="quick-action" onClick={() => onNavigate("shape-upload")}>
+              <button className="quick-action" onClick={() => onNavigate("roads")}>
                 <span className="quick-action-icon">
                   <Layers size={17} />
                 </span>
@@ -570,6 +542,17 @@ function ExplanationView({ explanation }) {
         </div>
       )}
 
+      {explanation.weather && (
+        <div className="weather-note">
+          <span>Погодный фактор</span>
+          <strong>
+            {explanation.weather.source === "nasa-power"
+              ? `N=${formatVal(explanation.weather.index)}, FWI=${formatVal(explanation.weather.normalized)}`
+              : "климатическая норма (NASA POWER недоступен)"}
+          </strong>
+        </div>
+      )}
+
       <details className="explanation-details">
         <summary>Формула модели</summary>
         <div className="explanation-equation">{explanation.equation}</div>
@@ -646,22 +629,129 @@ function ExplanationView({ explanation }) {
         </div>
       )}
 
-      <div className="explanation-risk">
-        Вероятность пожара в течение года:{" "}
-        <strong>{(explanation.final.result * 100).toFixed(1)}%</strong>
+      {finalBlock ? (
+        <div className="explanation-risk">
+          Вероятность возгорания в текущем пожароопасном сезоне:{" "}
+          <strong>{(finalBlock.result * 100).toFixed(1)}%</strong>
+        </div>
+      ) : (
+        <p className="muted">
+          Расчёт сохранён в старом формате — подробное объяснение недоступно.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AiExplanationView({ explanation }) {
+  if (!explanation || explanation.method !== "ai") return null;
+  const ai = explanation.ai;
+  const finalBlock = explanation.final;
+  if (!ai || !finalBlock) return null;
+
+  return (
+    <div className="explanation ai-explanation">
+      {explanation.coordinates && (
+        <div className="explanation-coords">
+          Широта {explanation.coordinates.lat?.toFixed(4)}, долгота{" "}
+          {explanation.coordinates.lon?.toFixed(4)}
+        </div>
+      )}
+
+      <details className="explanation-details" open>
+        <summary>Как получена ИИ-оценка</summary>
+        <div className="explanation-equation">{explanation.equation}</div>
+      </details>
+
+      <div className="ai-point-card">
+        {ai.tile?.url && (
+          <img
+            className="ai-point-tile"
+            src={ai.tile.url}
+            alt="Космоснимок участка для ИИ-оценки"
+            loading="lazy"
+          />
+        )}
+        <div className="ai-point-main">
+          <span className="ai-point-label">Класс модели</span>
+          <strong>{ai.predicted_ru}</strong>
+          <span className="muted">
+            Уверенность {((ai.confidence || 0) * 100).toFixed(1)}%
+          </span>
+          <div className="ai-point-score">
+            <span>Индекс риска</span>
+            <strong>{Math.round((ai.risk_score || 0) * 100)}%</strong>
+          </div>
+          <span className="ai-point-model">{ai.model_id}</span>
+        </div>
       </div>
+
+      <div className="fire-prob-list ai-point-probs">
+        {(ai.probabilities || []).map((item) => (
+          <div className="fire-prob-row" key={item.label}>
+            <span>{item.label_ru}</span>
+            <div className="fire-prob-track">
+              <div
+                className="fire-prob-fill"
+                style={{ width: `${Math.max(item.probability * 100, 1)}%` }}
+              />
+            </div>
+            <span className="fire-prob-value">
+              {(item.probability * 100).toFixed(1)}%
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="explanation-block">
+        <div className="explanation-block-head">
+          <strong>{finalBlock.label}</strong>
+          <span>{finalBlock.formula}</span>
+          <em>{(finalBlock.result * 100).toFixed(2)}%</em>
+        </div>
+        <table className="explanation-factors two-col">
+          <tbody>
+            {finalBlock.terms.map((term, index) => (
+              <tr key={index}>
+                <td>{term.name}</td>
+                <td>{formatVal(term.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="explanation-risk">
+        Вероятность возгорания в текущем пожароопасном сезоне:{" "}
+        <strong>{(finalBlock.result * 100).toFixed(1)}%</strong>
+      </div>
+      <p className="ai-point-note">
+        Оценка по снимку участка носит вспомогательный характер и не заменяет
+        официальный прогноз пожарной опасности.
+      </p>
     </div>
   );
 }
 
 function RiskHistoryItem({ record, expanded, onToggle }) {
+  const isAi = record.explanation?.method === "ai";
   return (
     <div className="risk-history-item">
       <button className="risk-history-summary" onClick={onToggle}>
-        <span>{record.summary}</span>
+        <span className="risk-history-summary-main">
+          <span className={`method-badge ${isAi ? "ai" : "formula"}`}>
+            {isAi ? "ИИ" : "Формула"}
+          </span>
+          {record.summary}
+        </span>
         <span className="risk-history-date">{formatDate(record.created_at)}</span>
       </button>
-      {expanded && <ExplanationView explanation={record.explanation} />}
+      {expanded &&
+        (isAi ? (
+          <AiExplanationView explanation={record.explanation} />
+        ) : (
+          <ExplanationView explanation={record.explanation} />
+        ))}
     </div>
   );
 }
@@ -706,7 +796,7 @@ function LoginScreen({ onSubmit }) {
             <span className="feature-icon">
               <MapPinned size={16} />
             </span>
-            Карта риска и расчёт по выбранной точке
+            Карта риска: формула или ИИ-модель по точке
           </li>
           <li>
             <span className="feature-icon">
@@ -765,9 +855,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [openMode, setOpenMode] = useState("shape");
+  const [baseLayer, setBaseLayer] = useState("scheme");
+  const [riskMethod, setRiskMethod] = useState("formula");
+  const [historyTab, setHistoryTab] = useState("risk");
 
-  const [aiBaseLayer, setAiBaseLayer] = useState("scheme");
   const [uploads, setUploads] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [aiStatus, setAiStatus] = useState("");
@@ -778,11 +869,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [aiPlacingPoint, setAiPlacingPoint] = useState(false);
-  const [aiPoint, setAiPoint] = useState(null);
-  const [aiRisk, setAiRisk] = useState(null);
-  const [aiRiskLoading, setAiRiskLoading] = useState(false);
-  const [aiRiskError, setAiRiskError] = useState("");
   const [docFiles, setDocFiles] = useState([]);
   const [docStatus, setDocStatus] = useState("");
 
@@ -794,7 +880,6 @@ export default function App() {
   const [fireLoading, setFireLoading] = useState(false);
   const [firePreloading, setFirePreloading] = useState(false);
 
-  const [shapeBaseLayer, setShapeBaseLayer] = useState("scheme");
   const [roads, setRoads] = useState(null);
   const [roadsError, setRoadsError] = useState("");
   const [roadsStatus, setRoadsStatus] = useState(null);
@@ -909,8 +994,11 @@ export default function App() {
     return () => URL.revokeObjectURL(previewUrl);
   }, [fireFile]);
 
+  const needsFireStatus =
+    activeTab === "ai-fire" || (activeTab === "map" && riskMethod === "ai");
+
   useEffect(() => {
-    if (activeTab !== "ai-fire" || !token) return undefined;
+    if (!needsFireStatus || !token) return undefined;
     let cancelled = false;
     setFireError("");
     getFireModelStatus(token)
@@ -925,10 +1013,10 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, token]);
+  }, [needsFireStatus, token]);
 
   useEffect(() => {
-    if (activeTab !== "ai-fire" || !token || fireStatus?.state !== "loading") {
+    if (!needsFireStatus || !token || fireStatus?.state !== "loading") {
       return undefined;
     }
     const timer = setTimeout(() => {
@@ -937,7 +1025,7 @@ export default function App() {
         .catch((error) => setFireError(error.message || "Не удалось получить статус модели."));
     }, 3000);
     return () => clearTimeout(timer);
-  }, [activeTab, token, fireStatus]);
+  }, [needsFireStatus, token, fireStatus]);
 
   function handleLogin(result) {
     localStorage.setItem("token", result.access_token);
@@ -971,11 +1059,6 @@ export default function App() {
     setAnalytics(null);
     setAiStatus("");
     setFile(null);
-    setAiPoint(null);
-    setAiPlacingPoint(false);
-    setAiRisk(null);
-    setAiRiskLoading(false);
-    setAiRiskError("");
     setDocFiles([]);
     setDocStatus("");
     setFireFile(null);
@@ -986,28 +1069,18 @@ export default function App() {
     setFirePreloading(false);
   }
 
-  function handleModeClick(modeKey) {
-    if (sidebarCollapsed) {
-      setSidebarCollapsed(false);
-      setOpenMode(modeKey);
-      return;
-    }
-    setOpenMode((prev) => (prev === modeKey ? "" : modeKey));
-  }
-
   function goTo(tab) {
     setActiveTab(tab);
     setMobileNavOpen(false);
   }
 
-  async function handleMapClick(latlng) {
-    if (!latlng || !token || !placingPoint) return;
-    setPlacingPoint(false);
-    setSelectedPoint(latlng);
+  async function calculateRisk(latlng, method = riskMethod) {
+    if (!latlng || !token) return;
     setRiskLoading(true);
     setRiskError("");
+    setPointRisk(null);
     try {
-      const risk = await getPointRisk(token, latlng.lat, latlng.lng);
+      const risk = await getPointRisk(token, latlng.lat, latlng.lng, method);
       setPointRisk(risk);
       loadRiskHistory();
     } catch (err) {
@@ -1017,32 +1090,23 @@ export default function App() {
           ? "Превышено время ожидания ответа. Попробуйте ещё раз."
           : err.message || "Не удалось рассчитать риск."
       );
-      setPointRisk(null);
     } finally {
       setRiskLoading(false);
     }
   }
 
-  async function handleAiMapClick(latlng) {
-    if (!latlng || !aiPlacingPoint || !token) return;
-    setAiPoint({ lat: latlng.lat, lng: latlng.lng });
-    setAiPlacingPoint(false);
-    setAiRisk(null);
-    setAiRiskError("");
-    setAiRiskLoading(true);
-    try {
-      const risk = await getPointRisk(token, latlng.lat, latlng.lng);
-      setAiRisk(risk);
-      loadRiskHistory();
-    } catch (err) {
-      const aborted = err?.name === "AbortError";
-      setAiRiskError(
-        aborted
-          ? "Превышено время ожидания ответа. Попробуйте ещё раз."
-          : err.message || "Не удалось рассчитать риск."
-      );
-    } finally {
-      setAiRiskLoading(false);
+  async function handleMapClick(latlng) {
+    if (!latlng || !token || !placingPoint) return;
+    setPlacingPoint(false);
+    setSelectedPoint(latlng);
+    await calculateRisk(latlng, riskMethod);
+  }
+
+  function handleMethodChange(method) {
+    if (method === riskMethod) return;
+    setRiskMethod(method);
+    if (selectedPoint) {
+      calculateRisk(selectedPoint, method);
     }
   }
 
@@ -1148,7 +1212,8 @@ export default function App() {
       setTileForm({ title: "", z: "", x: "", y: "" });
       await loadUploads();
       await loadAnalytics();
-      goTo("ai-history");
+      setHistoryTab("uploads");
+      goTo("history");
     } catch (error) {
       setAiError(`Ошибка загрузки: ${error.message}`);
     } finally {
@@ -1194,7 +1259,7 @@ export default function App() {
             </span>
             <div>
               <strong>SpaceVision</strong>
-              <span>ИИ + Shape</span>
+              <span>Карта риска + ИИ</span>
             </div>
           </div>
           <button
@@ -1206,64 +1271,21 @@ export default function App() {
           </button>
         </div>
         <nav className="menu">
-          <button
-            className={activeTab === "dashboard" ? "menu-link active" : "menu-link"}
-            onClick={() => goTo("dashboard")}
-          >
-            <span className="menu-left">
-              <LayoutDashboard size={18} />
-              <span className="menu-label">Обзор</span>
-            </span>
-          </button>
-
-          {modeMenus.map((mode) => {
-            const ModeIcon = mode.icon;
-            const isOpen = openMode === mode.key;
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
             return (
-              <div key={mode.key} className="mode-group">
-                <button
-                  className={isOpen ? "mode-header open" : "mode-header"}
-                  onClick={() => handleModeClick(mode.key)}
-                >
-                  <span className="menu-left">
-                    <ModeIcon size={18} />
-                    <span className="menu-label">{mode.label}</span>
-                  </span>
-                  <ChevronDown
-                    size={16}
-                    className={isOpen ? "mode-chevron open" : "mode-chevron"}
-                  />
-                </button>
-                {isOpen && (
-                  <div className="submenu">
-                    {mode.items.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <button
-                          key={item.key}
-                          className={activeTab === item.key ? "submenu-item active" : "submenu-item"}
-                          onClick={() => goTo(item.key)}
-                        >
-                          <Icon size={16} />
-                          <span>{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <button
+                key={item.key}
+                className={activeTab === item.key ? "menu-link active" : "menu-link"}
+                onClick={() => goTo(item.key)}
+              >
+                <span className="menu-left">
+                  <Icon size={18} />
+                  <span className="menu-label">{item.label}</span>
+                </span>
+              </button>
             );
           })}
-
-          <button
-            className={activeTab === "profile" ? "menu-link active" : "menu-link"}
-            onClick={() => goTo("profile")}
-          >
-            <span className="menu-left">
-              <UserRound size={18} />
-              <span className="menu-label">Личный кабинет</span>
-            </span>
-          </button>
         </nav>
       </aside>
 
@@ -1307,30 +1329,47 @@ export default function App() {
             />
           )}
 
-          {activeTab === "ai-maps" && (
-            <section className="card map-card">
+          {activeTab === "map" && (
+            <section className="map-card">
               <div className="map-toolbar">
                 <div>
-                  <h2>Карта космоснимков</h2>
-                  <p>
-                    Нажмите кнопку-прицел и поставьте точку, чтобы получить оценку риска от ИИ.
+                  <h2>Карта риска</h2>
+                  <p className="muted">
+                    Поставьте точку, выберите метод расчёта и сравните результат
+                    формулы с оценкой ИИ-модели.
                   </p>
                 </div>
                 <div className="layer-switcher">
                   <button
-                    className={aiBaseLayer === "scheme" ? "layer-btn active" : "layer-btn"}
-                    onClick={() => setAiBaseLayer("scheme")}
+                    className={baseLayer === "scheme" ? "layer-btn active" : "layer-btn"}
+                    onClick={() => setBaseLayer("scheme")}
                   >
                     Схема
                   </button>
                   <button
-                    className={aiBaseLayer === "satellite" ? "layer-btn active" : "layer-btn"}
-                    onClick={() => setAiBaseLayer("satellite")}
+                    className={baseLayer === "satellite" ? "layer-btn active" : "layer-btn"}
+                    onClick={() => setBaseLayer("satellite")}
                   >
                     Спутник
                   </button>
                 </div>
               </div>
+
+              {roadsError && (
+                <Alert type="warning">
+                  <p>
+                    <strong>Дороги из SHP ещё не загружены.</strong> Формула может
+                    использовать резервный слой OSM; если он недоступен, дорожный
+                    фактор не учитывается. Для точного расчёта загрузите shapefile
+                    (.shp, .shx, .dbf, .prj) во вкладке «Дороги».
+                  </p>
+                  <p className="roads-hint-detail">{roadsError}</p>
+                  <button className="btn-sm" onClick={() => goTo("roads")}>
+                    Перейти к загрузке SHP
+                  </button>
+                </Alert>
+              )}
+
               <div className="map-with-explanation">
                 <div className="map">
                   <MapContainer
@@ -1338,12 +1377,13 @@ export default function App() {
                     zoom={DEFAULT_ZOOM}
                     style={{ height: "100%", width: "100%" }}
                   >
-                    <MapClickHandler onClick={handleAiMapClick} />
+                    <MapClickHandler onClick={handleMapClick} />
                     <PlacePointControl
-                      active={aiPlacingPoint}
-                      onToggle={() => setAiPlacingPoint((prev) => !prev)}
+                      active={placingPoint}
+                      onToggle={() => setPlacingPoint((prev) => !prev)}
                     />
-                    {aiBaseLayer === "scheme" ? (
+                    <RoadsFitBounds data={roads} />
+                    {baseLayer === "scheme" ? (
                       <TileLayer
                         attribution="&copy; OpenStreetMap contributors"
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -1354,12 +1394,57 @@ export default function App() {
                         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                       />
                     )}
-                    <TileLayer url={`${API_URL}/tiles/{z}/{x}/{y}`} opacity={0.75} />
-                    {aiPoint && (
-                      <Marker position={[aiPoint.lat, aiPoint.lng]}>
+                    {roads && (
+                      <GeoJSON
+                        data={roads}
+                        pathOptions={{ color: "#d97706", weight: 2.5, opacity: 0.9 }}
+                      />
+                    )}
+                    {selectedPoint && (
+                      <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
                         <Popup>
-                          Точка для расчёта риска (ИИ): {aiPoint.lat.toFixed(4)},{" "}
-                          {aiPoint.lng.toFixed(4)}
+                          {riskLoading ? (
+                            "Расчёт…"
+                          ) : riskError ? (
+                            riskError
+                          ) : pointRisk ? (
+                            <div>
+                              <strong>
+                                {(pointRisk.fire_probability * 100).toFixed(1)}% ·{" "}
+                                {pointRisk.method === "ai" ? "ИИ-модель" : "формула"}
+                              </strong>
+                              <div style={{ margin: "6px 0" }}>
+                                <RiskBadge level={pointRisk.risk_level} />
+                              </div>
+                              До дороги:{" "}
+                              {pointRisk.road_distance_m != null
+                                ? `${pointRisk.road_distance_m.toFixed(0)} м`
+                                : "—"}
+                              <br />
+                              {pointRisk.method === "ai" ? (
+                                <>
+                                  Класс:{" "}
+                                  {pointRisk.explanation?.ai?.predicted_ru || "—"}
+                                  <br />
+                                  Уверенность:{" "}
+                                  {(
+                                    (pointRisk.explanation?.ai?.confidence || 0) * 100
+                                  ).toFixed(1)}
+                                  %
+                                </>
+                              ) : (
+                                <>
+                                  P_base:{" "}
+                                  {(pointRisk.base_probability * 100).toFixed(1)}%
+                                  <br />
+                                  P_fire:{" "}
+                                  {(pointRisk.fire_probability * 100).toFixed(1)}%
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            ""
+                          )}
                         </Popup>
                       </Marker>
                     )}
@@ -1367,77 +1452,127 @@ export default function App() {
                   <RiskLegend />
                 </div>
 
-                <aside className="explanation-panel ai-answer-panel">
-                  {aiPoint ? (
-                    <>
-                      <div className="explanation-panel-head">
-                        <strong>Ответ ИИ</strong>
-                        <span className="muted">
-                          {aiPoint.lat.toFixed(4)}, {aiPoint.lng.toFixed(4)}
+                <aside className="explanation-panel">
+                  <div className="method-picker">
+                    <span className="method-picker-label">Метод расчёта</span>
+                    <div className="method-toggle">
+                      <button
+                        className={
+                          riskMethod === "formula" ? "method-btn active" : "method-btn"
+                        }
+                        onClick={() => handleMethodChange("formula")}
+                      >
+                        <Activity size={15} /> Формула
+                      </button>
+                      <button
+                        className={riskMethod === "ai" ? "method-btn active" : "method-btn"}
+                        onClick={() => handleMethodChange("ai")}
+                      >
+                        <BrainCircuit size={15} /> ИИ-модель
+                      </button>
+                    </div>
+                    <p className="method-note">
+                      {riskMethod === "formula"
+                        ? "Погода, дороги, поселения и сезон. Быстрый объяснимый расчёт."
+                        : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
+                    </p>
+                    {riskMethod === "ai" && (
+                      <div className={`method-model-state ${fireStatus?.state || "unknown"}`}>
+                        <span>
+                          {!fireStatus
+                            ? "Проверка ИИ-модели…"
+                            : fireStatus.state === "ready"
+                              ? "ИИ-модель готова"
+                              : fireStatus.state === "loading"
+                                ? "ИИ-модель загружается…"
+                                : fireStatus.state === "disabled"
+                                  ? "ИИ-модель отключена"
+                                  : fireStatus.state === "error"
+                                    ? fireStatus.error || "Ошибка загрузки модели"
+                                    : "Модель ещё не подготовлена"}
                         </span>
-                      </div>
-                      {aiRiskLoading ? (
-                        <div className="explanation-placeholder">
-                          <span className="spinner lg" />
-                          Расчёт вероятности…
-                        </div>
-                      ) : aiRiskError ? (
-                        <Alert type="error">{aiRiskError}</Alert>
-                      ) : aiRisk ? (
-                        <>
-                          <div className={`risk-hero ${aiRisk.risk_level || "low"}`}>
-                            <div className="risk-hero-value">
-                              {(aiRisk.fire_probability * 100).toFixed(1)}%
-                            </div>
-                            <div className="risk-hero-meta">
-                              <RiskBadge level={aiRisk.risk_level} />
-                              <span>в течение года</span>
-                            </div>
-                            <div className="risk-hero-facts">
-                              <div className="risk-fact">
-                                <span>До ближайшей дороги</span>
-                                <strong>
-                                  {aiRisk.road_distance_m != null
-                                    ? `${aiRisk.road_distance_m.toFixed(0)} м`
-                                    : "—"}
-                                </strong>
-                              </div>
-                              <div className="risk-fact">
-                                <span>Источник дорог</span>
-                                <strong>
-                                  {aiRisk.road_source === "shp"
-                                    ? "SHP"
-                                    : aiRisk.road_source === "osm"
-                                      ? "OSM"
-                                      : "—"}
-                                </strong>
-                              </div>
-                            </div>
-                          </div>
-                          <p className="ai-answer-summary">{aiRisk.summary}</p>
+                        {(fireStatus?.state === "not_loaded" ||
+                          fireStatus?.state === "error") && (
                           <button
-                            className="btn-ghost btn-sm"
-                            onClick={() => goTo("ai-fire")}
+                            className="btn-primary btn-sm"
+                            onClick={handleFirePreload}
+                            disabled={firePreloading}
                           >
-                            <Flame size={15} /> Оценить снимок участка
+                            {firePreloading ? "Запуск…" : "Подготовить"}
                           </button>
-                        </>
-                      ) : (
-                        <div className="empty-state">
-                          <span className="empty-state-icon">
-                            <BrainCircuit size={22} />
-                          </span>
-                          <strong>Точка выбрана</strong>
-                          <p>Поставьте точку ещё раз, чтобы повторить расчёт.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {riskLoading ? (
+                    <div className="explanation-placeholder">
+                      <span className="spinner lg" />
+                      {riskMethod === "ai"
+                        ? "Классификация космоснимка участка…"
+                        : "Расчёт вероятности…"}
+                    </div>
+                  ) : riskError ? (
+                    <div className="explanation-placeholder error">
+                      <span>{riskError}</span>
+                      {selectedPoint && (
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={() => calculateRisk(selectedPoint, riskMethod)}
+                        >
+                          Повторить расчёт
+                        </button>
+                      )}
+                    </div>
+                  ) : pointRisk ? (
+                    <>
+                      <div className={`risk-hero ${pointRisk.risk_level || "low"}`}>
+                        <div className="risk-hero-value">
+                          {(pointRisk.fire_probability * 100).toFixed(1)}%
                         </div>
+                        <div className="risk-hero-meta">
+                          <RiskBadge level={pointRisk.risk_level} />
+                          <span>
+                            {pointRisk.method === "ai"
+                              ? "по снимку · текущий сезон"
+                              : "в текущем пожароопасном сезоне"}
+                          </span>
+                        </div>
+                        <div className="risk-hero-facts">
+                          <div className="risk-fact">
+                            <span>До ближайшей дороги</span>
+                            <strong>
+                              {pointRisk.road_distance_m != null
+                                ? `${pointRisk.road_distance_m.toFixed(0)} м`
+                                : "—"}
+                            </strong>
+                          </div>
+                          <div className="risk-fact">
+                            <span>Метод</span>
+                            <strong>
+                              {pointRisk.method === "ai" ? "ИИ-модель" : "Формула"}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                      {pointRisk.method === "ai" ? (
+                        <AiExplanationView explanation={pointRisk.explanation} />
+                      ) : (
+                        <ExplanationView explanation={pointRisk.explanation} />
                       )}
                     </>
                   ) : (
                     <div className="explanation-placeholder">
                       <span className="empty-state-icon">
-                        <MapPinned size={22} />
+                        {riskMethod === "ai" ? (
+                          <BrainCircuit size={22} />
+                        ) : (
+                          <MapPinned size={22} />
+                        )}
                       </span>
-                      Поставьте точку на карте, чтобы получить ответ ИИ.
+                      {riskMethod === "ai"
+                        ? "Поставьте точку — модель классифицирует космоснимок участка."
+                        : "Поставьте точку — формула рассчитает вероятность и покажет факторы."}
                     </div>
                   )}
                 </aside>
@@ -1445,37 +1580,123 @@ export default function App() {
             </section>
           )}
 
-          {activeTab === "ai-upload" && (
-            <section className="grid">
+          {activeTab === "roads" && (
+            <section className="grid roads-grid">
               <article className="card">
-                <h2>Загрузка космоснимков</h2>
+                <h2>Дороги из Shapefile</h2>
                 <p className="muted">
-                  Снимок будет обработан нейросетью: дороги распознаются автоматически.
+                  Загрузите .shp, .shx, .dbf и .prj (опционально .cpg). Файл .prj
+                  обязателен: система не угадывает систему координат.
+                </p>
+                <form onSubmit={handleUploadSHP} className="upload-form">
+                  <input
+                    type="file"
+                    multiple
+                    accept=".shp,.shx,.dbf,.prj,.cpg"
+                    onChange={(event) =>
+                      setUploadFiles(Array.from(event.target.files || []))
+                    }
+                  />
+                  {uploadFiles.length > 0 && (
+                    <div className="history">
+                      {uploadFiles.map((fileItem, index) => (
+                        <div className="history-item" key={index}>
+                          <strong>{fileItem.name}</strong>
+                          <span>{(fileItem.size / 1024).toFixed(1)} КБ</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={uploadLoading || uploadFiles.length === 0}
+                  >
+                    {uploadLoading ? "Загрузка…" : "Загрузить SHP"}
+                  </button>
+                </form>
+                {uploadStatus && <p className="status">{uploadStatus}</p>}
+                {uploadError && <p className="status error">{uploadError}</p>}
+                <p className="muted">
+                  После загрузки слой сразу используется на карте риска и в
+                  расчёте плотности дорог.
+                </p>
+              </article>
+
+              <article className="card">
+                <h2>Текущий слой дорог</h2>
+                {roadsStatus ? (
+                  <div>
+                    <p>
+                      {roadsStatus.uploaded
+                        ? "Дороги загружены."
+                        : "Дороги ещё не загружены."}
+                    </p>
+                    {roadsStatus.files && roadsStatus.files.length > 0 ? (
+                      <div className="history">
+                        {roadsStatus.files.map((fileItem) => (
+                          <div className="history-item" key={fileItem}>
+                            <strong>{fileItem}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="muted">Файлы не найдены.</p>
+                    )}
+                    <p className="path-text">{roadsStatus.roads_shp}</p>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      onClick={handleClearRoads}
+                      disabled={!roadsStatus.uploaded}
+                    >
+                      Очистить загруженные SHP
+                    </button>
+                  </div>
+                ) : (
+                  <div className="loading-block">
+                    <span className="spinner" /> Загрузка информации…
+                  </div>
+                )}
+              </article>
+
+              <article className="card">
+                <h2>Распознавание дорог по снимку</h2>
+                <p className="muted">
+                  Загрузите космоснимок — нейросеть U-Net построит маску дорог и
+                  оверлей. Результат появится в истории снимков.
                 </p>
                 <form onSubmit={handleUploadTile} className="upload-form">
                   <input
                     placeholder="Название снимка"
                     value={tileForm.title}
-                    onChange={(event) => setTileForm((prev) => ({ ...prev, title: event.target.value }))}
+                    onChange={(event) =>
+                      setTileForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
                     disabled={!canUpload}
                   />
                   <div className="inputs-row">
                     <input
                       placeholder="z (опционально)"
                       value={tileForm.z}
-                      onChange={(event) => setTileForm((prev) => ({ ...prev, z: event.target.value }))}
+                      onChange={(event) =>
+                        setTileForm((prev) => ({ ...prev, z: event.target.value }))
+                      }
                       disabled={!canUpload}
                     />
                     <input
                       placeholder="x (опционально)"
                       value={tileForm.x}
-                      onChange={(event) => setTileForm((prev) => ({ ...prev, x: event.target.value }))}
+                      onChange={(event) =>
+                        setTileForm((prev) => ({ ...prev, x: event.target.value }))
+                      }
                       disabled={!canUpload}
                     />
                     <input
                       placeholder="y (опционально)"
                       value={tileForm.y}
-                      onChange={(event) => setTileForm((prev) => ({ ...prev, y: event.target.value }))}
+                      onChange={(event) =>
+                        setTileForm((prev) => ({ ...prev, y: event.target.value }))
+                      }
                       disabled={!canUpload}
                     />
                   </div>
@@ -1486,11 +1707,20 @@ export default function App() {
                     disabled={!canUpload}
                   />
                   <button type="submit" disabled={!canUpload || isLoading}>
-                    {isLoading ? "Загрузка…" : "Загрузить"}
+                    {isLoading ? "Распознавание…" : "Распознать дороги"}
                   </button>
                 </form>
                 {aiStatus && <Alert type="success">{aiStatus}</Alert>}
                 {aiError && <Alert type="error">{aiError}</Alert>}
+                <button
+                  className="btn-ghost btn-sm"
+                  onClick={() => {
+                    setHistoryTab("uploads");
+                    goTo("history");
+                  }}
+                >
+                  <History size={15} /> История снимков
+                </button>
               </article>
 
               <article className="card">
@@ -1498,11 +1728,13 @@ export default function App() {
                 <div className="list">
                   <div className="list-row">
                     <span className="list-icon">
-                      <Upload size={16} />
+                      <Route size={16} />
                     </span>
                     <div className="list-main">
-                      <div className="list-title">1. Загрузка снимка</div>
-                      <div className="list-sub">PNG или JPEG; tile z/x/y — по желанию</div>
+                      <div className="list-title">1. SHP-слой</div>
+                      <div className="list-sub">
+                        Дороги района для расстояний и плотности
+                      </div>
                     </div>
                   </div>
                   <div className="list-row">
@@ -1510,8 +1742,10 @@ export default function App() {
                       <BrainCircuit size={16} />
                     </span>
                     <div className="list-main">
-                      <div className="list-title">2. Распознавание дорог</div>
-                      <div className="list-sub">Нейросеть U-Net строит маску и оверлей</div>
+                      <div className="list-title">2. Распознавание по снимку</div>
+                      <div className="list-sub">
+                        U-Net строит маску дорог и оверлей
+                      </div>
                     </div>
                   </div>
                   <div className="list-row">
@@ -1520,7 +1754,9 @@ export default function App() {
                     </span>
                     <div className="list-main">
                       <div className="list-title">3. Аналитика</div>
-                      <div className="list-sub">Доля дорог и статистика по каждому снимку</div>
+                      <div className="list-sub">
+                        Доля дорог и статистика по каждому снимку
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1711,7 +1947,7 @@ export default function App() {
             </section>
           )}
 
-          {activeTab === "ai-documents" && (
+          {activeTab === "documents" && (
             <section className="grid">
               <article className="card">
                 <h2>Загрузка документов</h2>
@@ -1773,7 +2009,7 @@ export default function App() {
             </section>
           )}
 
-          {activeTab === "ai-statistics" && (
+          {activeTab === "statistics" && (
             <section className="statistics-layout">
               <article className="card stats-kpis">
                 <h2>Статистика</h2>
@@ -1835,7 +2071,7 @@ export default function App() {
                     title="Пока нет данных для рейтинга"
                     text="Загрузите космоснимки — рейтинг построится автоматически."
                     action={
-                      <button className="btn-primary btn-sm" onClick={() => goTo("ai-upload")}>
+                      <button className="btn-primary btn-sm" onClick={() => goTo("roads")}>
                         Загрузить снимок
                       </button>
                     }
@@ -1865,348 +2101,157 @@ export default function App() {
             </section>
           )}
 
-          {activeTab === "ai-history" && (
+          {activeTab === "history" && (
             <section className="card">
-              <h2>История загрузок космоснимков</h2>
-              <div className="history-filters">
-                <input
-                  type="text"
-                  placeholder="Поиск по названию снимка"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(event) => setDateFrom(event.target.value)}
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(event) => setDateTo(event.target.value)}
-                />
+              <div className="history-head">
+                <div>
+                  <h2>История</h2>
+                  <p className="muted">
+                    Расчёты риска по точке и обработанные космоснимки.
+                  </p>
+                </div>
+                <div className="tab-strip">
+                  <button
+                    className={historyTab === "risk" ? "tab-btn active" : "tab-btn"}
+                    onClick={() => setHistoryTab("risk")}
+                  >
+                    Расчёты риска <span>{riskHistory.length}</span>
+                  </button>
+                  <button
+                    className={historyTab === "uploads" ? "tab-btn active" : "tab-btn"}
+                    onClick={() => setHistoryTab("uploads")}
+                  >
+                    Снимки <span>{safeUploads.length}</span>
+                  </button>
+                </div>
               </div>
-              <div className="history">
-                {filteredUploads.length === 0 ? (
+
+              {historyTab === "risk" ? (
+                riskHistory.length === 0 ? (
                   <EmptyState
-                    icon={ImageIcon}
-                    title="Ничего не найдено"
-                    text="Измените фильтры или загрузите новый космоснимок."
+                    icon={History}
+                    title="Расчётов пока нет"
+                    text="Поставьте точку на карте риска — система рассчитает вероятность пожара и объяснит факторы."
                     action={
-                      <button className="btn-primary btn-sm" onClick={() => goTo("ai-upload")}>
-                        Загрузить снимок
+                      <button className="btn-primary btn-sm" onClick={() => goTo("map")}>
+                        Открыть карту риска
                       </button>
                     }
                   />
                 ) : (
-                  filteredUploads.map((upload) => {
-                    const analyticsEntry = analyticsByUploadId.get(upload.id);
-                    const roadPercent = analyticsEntry?.road_percentage ?? 0;
-                    const clampedRoadPercent = Math.max(0, Math.min(100, roadPercent));
-                    return (
-                      <div className="history-item" key={upload.id ?? String(upload.title)}>
-                        <strong>{upload.title || "Без названия"}</strong>
-                        <span>{formatDate(upload.created_at)}</span>
-                        <span>
-                          tile: z{upload.tile_z} / x{upload.tile_x} / y{upload.tile_y}
-                        </span>
-                        <div className="history-road-metric">
-                          <div className="history-road-metric-head">
-                            <span>% пикселей дорог</span>
-                            <strong>{clampedRoadPercent.toFixed(2)}%</strong>
-                          </div>
-                          <div className="history-road-bar-wrap">
-                            <div
-                              className="history-road-bar"
-                              style={{ width: `${Math.max(1, clampedRoadPercent)}%` }}
-                            />
-                          </div>
-                        </div>
-                        {(upload.mask_url || upload.overlay_url) && (
-                          <span>
-                            {upload.mask_url && (
-                              <a
-                                href={`${API_URL}${upload.mask_url}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Маска дорог
-                              </a>
-                            )}
-                            {upload.mask_url && upload.overlay_url && " · "}
-                            {upload.overlay_url && (
-                              <a
-                                href={`${API_URL}${upload.overlay_url}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Оверлей
-                              </a>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </section>
-          )}
-
-          {activeTab === "shape-maps" && (
-            <section className="map-card">
-              <div className="map-toolbar">
-                <div>
-                  <h2>Карта</h2>
-                  <p className="muted">
-                    Нажмите кнопку-прицел, затем поставьте точку на карте.
-                  </p>
-                </div>
-                <div className="layer-switcher">
-                  <button
-                    className={shapeBaseLayer === "scheme" ? "layer-btn active" : "layer-btn"}
-                    onClick={() => setShapeBaseLayer("scheme")}
-                  >
-                    Схема
-                  </button>
-                  <button
-                    className={shapeBaseLayer === "satellite" ? "layer-btn active" : "layer-btn"}
-                    onClick={() => setShapeBaseLayer("satellite")}
-                  >
-                    Спутник
-                  </button>
-                </div>
-              </div>
-              {roadsError && (
-                <Alert type="warning">
-                  <p>
-                    <strong>Дороги ещё не загружены.</strong> Чтобы рассчитывать
-                    вероятность пожара, загрузите shapefile (.shp, .shx, .dbf, .prj) в
-                    разделе «Загрузка SHP».
-                  </p>
-                  <p className="roads-hint-detail">{roadsError}</p>
-                  <button className="btn-sm" onClick={() => goTo("shape-upload")}>
-                    Перейти к загрузке SHP
-                  </button>
-                </Alert>
-              )}
-              <div className="map-with-explanation">
-                <div className="map">
-                  <MapContainer
-                    center={DEFAULT_CENTER}
-                    zoom={DEFAULT_ZOOM}
-                    style={{ height: "100%", width: "100%" }}
-                  >
-                    <MapClickHandler onClick={handleMapClick} />
-                    <PlacePointControl
-                      active={placingPoint}
-                      onToggle={() => setPlacingPoint((prev) => !prev)}
-                    />
-                    <RoadsFitBounds data={roads} />
-                    {shapeBaseLayer === "scheme" ? (
-                      <TileLayer
-                        attribution="&copy; OpenStreetMap contributors"
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  <div className="risk-history">
+                    {riskHistory.map((record) => (
+                      <RiskHistoryItem
+                        key={record.id}
+                        record={record}
+                        expanded={expandedRiskId === record.id}
+                        onToggle={() =>
+                          setExpandedRiskId((prev) =>
+                            prev === record.id ? null : record.id
+                          )
+                        }
                       />
-                    ) : (
-                      <TileLayer
-                        attribution="Tiles &copy; Esri"
-                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                      />
-                    )}
-                    {roads && (
-                      <GeoJSON data={roads} pathOptions={{ color: "#d97706", weight: 2.5, opacity: 0.9 }} />
-                    )}
-                    {selectedPoint && (
-                      <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
-                        <Popup>
-                          {riskLoading ? (
-                            "Расчёт…"
-                          ) : riskError ? (
-                            riskError
-                          ) : pointRisk ? (
-                            <div>
-                              <strong>
-                                {(pointRisk.fire_probability * 100).toFixed(1)}% в течение года
-                              </strong>
-                              <div style={{ margin: "6px 0" }}>
-                                <RiskBadge level={pointRisk.risk_level} />
-                              </div>
-                              Расстояние до дороги:{" "}
-                              {pointRisk.road_distance_m != null
-                                ? `${pointRisk.road_distance_m.toFixed(0)} м`
-                                : "—"}
-                              <br />
-                              Дорога I(R), учтена в P_base:{" "}
-                              {pointRisk.road_influence.toFixed(3)}
-                              <br />
-                              Логит-модель P_base:{" "}
-                              {(pointRisk.base_probability * 100).toFixed(1)}%
-                              <br />
-                              Итоговая P_fire:{" "}
-                              {(pointRisk.fire_probability * 100).toFixed(1)}%
-                            </div>
-                          ) : (
-                            ""
-                          )}
-                        </Popup>
-                      </Marker>
-                    )}
-                  </MapContainer>
-                  <RiskLegend />
-                </div>
-
-                <aside className="explanation-panel">
-                  {riskLoading ? (
-                    <div className="explanation-placeholder">
-                      <span className="spinner lg" />
-                      Расчёт вероятности…
-                    </div>
-                  ) : riskError ? (
-                    <div className="explanation-placeholder error">{riskError}</div>
-                  ) : pointRisk ? (
-                    <>
-                      <div className={`risk-hero ${pointRisk.risk_level || "low"}`}>
-                        <div className="risk-hero-value">
-                          {(pointRisk.fire_probability * 100).toFixed(1)}%
-                        </div>
-                        <div className="risk-hero-meta">
-                          <RiskBadge level={pointRisk.risk_level} />
-                          <span>в течение года</span>
-                        </div>
-                        <div className="risk-hero-facts">
-                          <div className="risk-fact">
-                            <span>До ближайшей дороги</span>
-                            <strong>
-                              {pointRisk.road_distance_m != null
-                                ? `${pointRisk.road_distance_m.toFixed(0)} м`
-                                : "—"}
-                            </strong>
-                          </div>
-                          <div className="risk-fact">
-                            <span>Источник дорог</span>
-                            <strong>
-                              {pointRisk.road_source === "shp"
-                                ? "SHP"
-                                : pointRisk.road_source === "osm"
-                                  ? "OSM"
-                                  : "—"}
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-                      <ExplanationView explanation={pointRisk.explanation} />
-                    </>
-                  ) : (
-                    <div className="explanation-placeholder">
-                      <span className="empty-state-icon">
-                        <MapPinned size={22} />
-                      </span>
-                      Нажмите кнопку-прицел и поставьте точку, чтобы увидеть подробное
-                      объяснение расчёта.
-                    </div>
-                  )}
-                </aside>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "shape-history" && (
-            <section className="card">
-              <h2>История расчётов вероятности пожара</h2>
-              {riskHistory.length === 0 ? (
-                <EmptyState
-                  icon={History}
-                  title="Расчётов пока нет"
-                  text="Поставьте точку на карте риска — система рассчитает вероятность пожара и объяснит факторы."
-                  action={
-                    <button className="btn-primary btn-sm" onClick={() => goTo("shape-maps")}>
-                      Открыть карту риска
-                    </button>
-                  }
-                />
+                    ))}
+                  </div>
+                )
               ) : (
-                <div className="risk-history">
-                  {riskHistory.map((record) => (
-                    <RiskHistoryItem
-                      key={record.id}
-                      record={record}
-                      expanded={expandedRiskId === record.id}
-                      onToggle={() =>
-                        setExpandedRiskId((prev) => (prev === record.id ? null : record.id))
-                      }
+                <>
+                  <div className="history-filters">
+                    <input
+                      type="text"
+                      placeholder="Поиск по названию снимка"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
                     />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {activeTab === "shape-upload" && (
-            <section className="grid">
-              <article className="card">
-                <h2>Загрузка SHP (дороги)</h2>
-                <p className="muted">
-                  Загрузите файлы shapefile: .shp, .shx, .dbf, .prj (и опционально .cpg).
-                  Файл .prj обязателен — он содержит систему координат (CRS).
-                </p>
-                <form onSubmit={handleUploadSHP} className="upload-form">
-                  <input
-                    type="file"
-                    multiple
-                    accept=".shp,.shx,.dbf,.prj,.cpg"
-                    onChange={(event) => setUploadFiles(Array.from(event.target.files || []))}
-                  />
-                  {uploadFiles.length > 0 && (
-                    <div className="history">
-                      {uploadFiles.map((fileItem, index) => (
-                        <div className="history-item" key={index}>
-                          <strong>{fileItem.name}</strong>
-                          <span>{(fileItem.size / 1024).toFixed(1)} КБ</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button type="submit" disabled={uploadLoading || uploadFiles.length === 0}>
-                    {uploadLoading ? "Загрузка…" : "Загрузить"}
-                  </button>
-                </form>
-                {uploadStatus && <p className="status">{uploadStatus}</p>}
-                {uploadError && <p className="status error">{uploadError}</p>}
-              </article>
-
-              <article className="card">
-                <h2>Текущее состояние дорог</h2>
-                {roadsStatus ? (
-                  <div>
-                    <p>{roadsStatus.uploaded ? "Дороги загружены." : "Дороги ещё не загружены."}</p>
-                    {roadsStatus.files && roadsStatus.files.length > 0 ? (
-                      <div className="history">
-                        {roadsStatus.files.map((fileItem) => (
-                          <div className="history-item" key={fileItem}>
-                            <strong>{fileItem}</strong>
-                          </div>
-                        ))}
-                      </div>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => setDateFrom(event.target.value)}
+                    />
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(event) => setDateTo(event.target.value)}
+                    />
+                  </div>
+                  <div className="history">
+                    {filteredUploads.length === 0 ? (
+                      <EmptyState
+                        icon={ImageIcon}
+                        title="Ничего не найдено"
+                        text="Измените фильтры или загрузите новый космоснимок."
+                        action={
+                          <button
+                            className="btn-primary btn-sm"
+                            onClick={() => goTo("roads")}
+                          >
+                            Загрузить снимок
+                          </button>
+                        }
+                      />
                     ) : (
-                      <p className="muted">Файлы не найдены.</p>
+                      filteredUploads.map((upload) => {
+                        const analyticsEntry = analyticsByUploadId.get(upload.id);
+                        const roadPercent = analyticsEntry?.road_percentage ?? 0;
+                        const clampedRoadPercent = Math.max(
+                          0,
+                          Math.min(100, roadPercent)
+                        );
+                        return (
+                          <div
+                            className="history-item"
+                            key={upload.id ?? String(upload.title)}
+                          >
+                            <strong>{upload.title || "Без названия"}</strong>
+                            <span>{formatDate(upload.created_at)}</span>
+                            <span>
+                              tile: z{upload.tile_z} / x{upload.tile_x} / y
+                              {upload.tile_y}
+                            </span>
+                            <div className="history-road-metric">
+                              <div className="history-road-metric-head">
+                                <span>% пикселей дорог</span>
+                                <strong>{clampedRoadPercent.toFixed(2)}%</strong>
+                              </div>
+                              <div className="history-road-bar-wrap">
+                                <div
+                                  className="history-road-bar"
+                                  style={{
+                                    width: `${Math.max(1, clampedRoadPercent)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            {(upload.mask_url || upload.overlay_url) && (
+                              <span>
+                                {upload.mask_url && (
+                                  <a
+                                    href={`${API_URL}${upload.mask_url}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Маска дорог
+                                  </a>
+                                )}
+                                {upload.mask_url && upload.overlay_url && " · "}
+                                {upload.overlay_url && (
+                                  <a
+                                    href={`${API_URL}${upload.overlay_url}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Оверлей
+                                  </a>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
-                    <p className="path-text">{roadsStatus.roads_shp}</p>
-                    <button
-                      type="button"
-                      className="btn-danger"
-                      onClick={handleClearRoads}
-                      disabled={!roadsStatus.uploaded}
-                    >
-                      Очистить загруженные SHP
-                    </button>
                   </div>
-                ) : (
-                  <div className="loading-block">
-                    <span className="spinner" /> Загрузка информации…
-                  </div>
-                )}
-              </article>
+                </>
+              )}
             </section>
           )}
 
