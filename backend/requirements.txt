@@ -14,3 +14,7 @@ albumentations
 opencv-python-headless
 numpy
 Pillow
+# Pretrained image fire-risk classifier (SigLIP2). Pin <5: transformers 5.x
+# requires PyTorch >= 2.6 while the project uses 2.5.x.
+transformers>=4.50,<5
+safetensors

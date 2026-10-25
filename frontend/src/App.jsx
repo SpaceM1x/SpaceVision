@@ -36,14 +36,17 @@ import {
 } from "react-leaflet";
 import {
   API_URL,
+  classifyFireImage,
   clearRoads,
   getAnalyticsSummary,
+  getFireModelStatus,
   getPointRisk,
   getRiskHistory,
   getRoads,
   getRoadsStatus,
   getUploads,
   login,
+  preloadFireModel,
   uploadRoads,
   uploadTile,
 } from "./api";
@@ -56,6 +59,7 @@ const modeMenus = [
     items: [
       { key: "ai-maps", label: "Карта космоснимков", icon: MapIcon },
       { key: "ai-upload", label: "Загрузка космоснимков", icon: Upload },
+      { key: "ai-fire", label: "ИИ-оценка пожарной опасности", icon: Flame },
       { key: "ai-documents", label: "Загрузка документов", icon: FileText },
       { key: "ai-statistics", label: "Статистика", icon: BarChart3 },
       { key: "ai-history", label: "История загрузок", icon: History },
@@ -88,6 +92,10 @@ const TAB_META = {
   "ai-upload": {
     title: "ИИ-режим · Загрузка космоснимков",
     subtitle: "Автоматическое распознавание дорог нейросетью U-Net",
+  },
+  "ai-fire": {
+    title: "ИИ-режим · Пожарная опасность",
+    subtitle: "Предобученная модель SigLIP2 оценивает риск по космоснимку",
   },
   "ai-documents": {
     title: "ИИ-режим · Документы",
@@ -343,6 +351,15 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                 <span className="quick-action-body">
                   <strong>Рассчитать риск</strong>
                   <span>Клик по точке на карте</span>
+                </span>
+              </button>
+              <button className="quick-action" onClick={() => onNavigate("ai-fire")}>
+                <span className="quick-action-icon">
+                  <Flame size={17} />
+                </span>
+                <span className="quick-action-body">
+                  <strong>Оценить снимок</strong>
+                  <span>Модель SigLIP2 по фото</span>
                 </span>
               </button>
               <button className="quick-action" onClick={() => onNavigate("shape-upload")}>
@@ -763,8 +780,19 @@ export default function App() {
   const [dateTo, setDateTo] = useState("");
   const [aiPlacingPoint, setAiPlacingPoint] = useState(false);
   const [aiPoint, setAiPoint] = useState(null);
+  const [aiRisk, setAiRisk] = useState(null);
+  const [aiRiskLoading, setAiRiskLoading] = useState(false);
+  const [aiRiskError, setAiRiskError] = useState("");
   const [docFiles, setDocFiles] = useState([]);
   const [docStatus, setDocStatus] = useState("");
+
+  const [fireFile, setFireFile] = useState(null);
+  const [firePreview, setFirePreview] = useState("");
+  const [fireResult, setFireResult] = useState(null);
+  const [fireStatus, setFireStatus] = useState(null);
+  const [fireError, setFireError] = useState("");
+  const [fireLoading, setFireLoading] = useState(false);
+  const [firePreloading, setFirePreloading] = useState(false);
 
   const [shapeBaseLayer, setShapeBaseLayer] = useState("scheme");
   const [roads, setRoads] = useState(null);
@@ -871,6 +899,46 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    if (!fireFile) {
+      setFirePreview("");
+      return undefined;
+    }
+    const previewUrl = URL.createObjectURL(fireFile);
+    setFirePreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [fireFile]);
+
+  useEffect(() => {
+    if (activeTab !== "ai-fire" || !token) return undefined;
+    let cancelled = false;
+    setFireError("");
+    getFireModelStatus(token)
+      .then((status) => {
+        if (!cancelled) setFireStatus(status);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setFireError(error.message || "Не удалось получить статус модели.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, token]);
+
+  useEffect(() => {
+    if (activeTab !== "ai-fire" || !token || fireStatus?.state !== "loading") {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      getFireModelStatus(token)
+        .then((status) => setFireStatus(status))
+        .catch((error) => setFireError(error.message || "Не удалось получить статус модели."));
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [activeTab, token, fireStatus]);
+
   function handleLogin(result) {
     localStorage.setItem("token", result.access_token);
     localStorage.setItem("role", result.role);
@@ -905,8 +973,17 @@ export default function App() {
     setFile(null);
     setAiPoint(null);
     setAiPlacingPoint(false);
+    setAiRisk(null);
+    setAiRiskLoading(false);
+    setAiRiskError("");
     setDocFiles([]);
     setDocStatus("");
+    setFireFile(null);
+    setFireResult(null);
+    setFireStatus(null);
+    setFireError("");
+    setFireLoading(false);
+    setFirePreloading(false);
   }
 
   function handleModeClick(modeKey) {
@@ -946,10 +1023,59 @@ export default function App() {
     }
   }
 
-  function handleAiMapClick(latlng) {
-    if (!latlng || !aiPlacingPoint) return;
+  async function handleAiMapClick(latlng) {
+    if (!latlng || !aiPlacingPoint || !token) return;
     setAiPoint({ lat: latlng.lat, lng: latlng.lng });
     setAiPlacingPoint(false);
+    setAiRisk(null);
+    setAiRiskError("");
+    setAiRiskLoading(true);
+    try {
+      const risk = await getPointRisk(token, latlng.lat, latlng.lng);
+      setAiRisk(risk);
+      loadRiskHistory();
+    } catch (err) {
+      const aborted = err?.name === "AbortError";
+      setAiRiskError(
+        aborted
+          ? "Превышено время ожидания ответа. Попробуйте ещё раз."
+          : err.message || "Не удалось рассчитать риск."
+      );
+    } finally {
+      setAiRiskLoading(false);
+    }
+  }
+
+  async function handleFirePreload() {
+    if (!token || firePreloading) return;
+    setFirePreloading(true);
+    setFireError("");
+    try {
+      const status = await preloadFireModel(token);
+      setFireStatus(status);
+    } catch (error) {
+      setFireError(error.message || "Не удалось запустить загрузку модели.");
+    } finally {
+      setFirePreloading(false);
+    }
+  }
+
+  async function handleFireClassify(event) {
+    event.preventDefault();
+    if (!fireFile || fireLoading) return;
+    setFireLoading(true);
+    setFireError("");
+    setFireResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", fireFile);
+      const result = await classifyFireImage(formData, token);
+      setFireResult(result);
+    } catch (error) {
+      setFireError(error.message || "Не удалось оценить снимок.");
+    } finally {
+      setFireLoading(false);
+    }
   }
 
   function handleDocUpload(event) {
@@ -1246,18 +1372,65 @@ export default function App() {
                     <>
                       <div className="explanation-panel-head">
                         <strong>Ответ ИИ</strong>
-                      </div>
-                      <div className="empty-state">
-                        <span className="empty-state-icon">
-                          <BrainCircuit size={22} />
+                        <span className="muted">
+                          {aiPoint.lat.toFixed(4)}, {aiPoint.lng.toFixed(4)}
                         </span>
-                        <strong>Модуль в разработке</strong>
-                        <p>
-                          Точка: {aiPoint.lat.toFixed(4)}, {aiPoint.lng.toFixed(4)}.
-                          Здесь появится оценка риска и объяснение на основе
-                          исторических документов.
-                        </p>
                       </div>
+                      {aiRiskLoading ? (
+                        <div className="explanation-placeholder">
+                          <span className="spinner lg" />
+                          Расчёт вероятности…
+                        </div>
+                      ) : aiRiskError ? (
+                        <Alert type="error">{aiRiskError}</Alert>
+                      ) : aiRisk ? (
+                        <>
+                          <div className={`risk-hero ${aiRisk.risk_level || "low"}`}>
+                            <div className="risk-hero-value">
+                              {(aiRisk.fire_probability * 100).toFixed(1)}%
+                            </div>
+                            <div className="risk-hero-meta">
+                              <RiskBadge level={aiRisk.risk_level} />
+                              <span>в течение года</span>
+                            </div>
+                            <div className="risk-hero-facts">
+                              <div className="risk-fact">
+                                <span>До ближайшей дороги</span>
+                                <strong>
+                                  {aiRisk.road_distance_m != null
+                                    ? `${aiRisk.road_distance_m.toFixed(0)} м`
+                                    : "—"}
+                                </strong>
+                              </div>
+                              <div className="risk-fact">
+                                <span>Источник дорог</span>
+                                <strong>
+                                  {aiRisk.road_source === "shp"
+                                    ? "SHP"
+                                    : aiRisk.road_source === "osm"
+                                      ? "OSM"
+                                      : "—"}
+                                </strong>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="ai-answer-summary">{aiRisk.summary}</p>
+                          <button
+                            className="btn-ghost btn-sm"
+                            onClick={() => goTo("ai-fire")}
+                          >
+                            <Flame size={15} /> Оценить снимок участка
+                          </button>
+                        </>
+                      ) : (
+                        <div className="empty-state">
+                          <span className="empty-state-icon">
+                            <BrainCircuit size={22} />
+                          </span>
+                          <strong>Точка выбрана</strong>
+                          <p>Поставьте точку ещё раз, чтобы повторить расчёт.</p>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="explanation-placeholder">
@@ -1351,6 +1524,189 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              </article>
+            </section>
+          )}
+
+          {activeTab === "ai-fire" && (
+            <section className="fire-layout">
+              <article className="card">
+                <div className="card-head">
+                  <div>
+                    <h2>Пожарная опасность по снимку</h2>
+                    <p className="muted">
+                      Загрузите космоснимок или фото участка — предобученная модель
+                      определит класс пожарной опасности.
+                    </p>
+                  </div>
+                  <span className="model-pill">
+                    <Flame size={14} /> SigLIP2
+                  </span>
+                </div>
+
+                <div className={`model-status ${fireStatus?.state || "unknown"}`}>
+                  <span className="model-status-icon">
+                    {fireStatus?.state === "ready" ? (
+                      <CheckCircle2 size={18} />
+                    ) : fireStatus?.state === "loading" ? (
+                      <span className="spinner" />
+                    ) : fireStatus?.state === "error" ? (
+                      <AlertTriangle size={18} />
+                    ) : (
+                      <Info size={18} />
+                    )}
+                  </span>
+                  <div className="model-status-body">
+                    <strong>
+                      {!fireStatus
+                        ? "Проверка модели…"
+                        : fireStatus.state === "ready"
+                          ? "Модель готова"
+                          : fireStatus.state === "loading"
+                            ? "Загрузка модели…"
+                            : fireStatus.state === "error"
+                              ? "Модель не загрузилась"
+                              : fireStatus.state === "disabled"
+                                ? "Модель отключена"
+                                : "Модель ещё не загружена"}
+                    </strong>
+                    <span>
+                      {!fireStatus
+                        ? "Проверяем состояние модели на сервере."
+                        : fireStatus.state === "ready"
+                          ? "Веса загружены — можно оценивать снимки."
+                          : fireStatus.state === "loading"
+                            ? "Первый запуск скачивает ~370 МБ. Это может занять несколько минут."
+                            : fireStatus.state === "error"
+                              ? fireStatus.error || "Не удалось загрузить веса модели."
+                              : fireStatus.state === "disabled"
+                                ? "На сервере установлено FIRE_RISK_MODEL_ENABLED=0."
+                                : "Первый запуск скачает ~370 МБ и подготовит модель."}
+                    </span>
+                  </div>
+                  {(fireStatus?.state === "not_loaded" ||
+                    fireStatus?.state === "error") && (
+                    <button
+                      className="btn-primary btn-sm"
+                      onClick={handleFirePreload}
+                      disabled={firePreloading}
+                    >
+                      {firePreloading
+                        ? "Запуск…"
+                        : fireStatus.state === "error"
+                          ? "Повторить"
+                          : "Подготовить модель"}
+                    </button>
+                  )}
+                </div>
+
+                <form onSubmit={handleFireClassify} className="upload-form">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => setFireFile(event.target.files?.[0] || null)}
+                    disabled={fireLoading}
+                  />
+                  {firePreview && (
+                    <div className="fire-preview">
+                      <img src={firePreview} alt="Предпросмотр снимка" />
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={
+                      !fireFile || fireLoading || fireStatus?.state !== "ready"
+                    }
+                  >
+                    {fireLoading ? "Анализ снимка…" : "Оценить пожарную опасность"}
+                  </button>
+                </form>
+
+                {fireError && <Alert type="error">{fireError}</Alert>}
+
+                <p className="fire-model-note">
+                  Модель: prithivMLmods/Fire-Risk-Detection (SigLIP2, Apache-2.0).
+                  Она оценивает характер подстилающей поверхности на снимке, а не
+                  прогнозирует возгорание в конкретной точке. Для точечного прогноза
+                  используйте карту риска.
+                </p>
+              </article>
+
+              <article className="card">
+                <h2>Результат модели</h2>
+                {!fireResult ? (
+                  <EmptyState
+                    icon={Flame}
+                    title="Снимок ещё не оценён"
+                    text="Выберите изображение и запустите оценку — здесь появятся класс пожарной опасности, уверенность модели и распределение вероятностей."
+                  />
+                ) : !fireResult.available ? (
+                  <Alert type="warning">
+                    {fireResult.reason || "Модель недоступна."}
+                  </Alert>
+                ) : (
+                  <div className="fire-result">
+                    <div className={`fire-hero ${fireResult.risk_level}`}>
+                      <span className="fire-hero-icon">
+                        <Flame size={26} />
+                      </span>
+                      <div className="fire-hero-main">
+                        <span className="fire-hero-label">Класс модели</span>
+                        <strong>{fireResult.predicted_ru}</strong>
+                        <span className="muted">
+                          Уверенность{" "}
+                          {((fireResult.confidence || 0) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="fire-score">
+                        <strong>
+                          {Math.round((fireResult.risk_score || 0) * 100)}%
+                        </strong>
+                        <span>индекс риска</span>
+                      </div>
+                    </div>
+
+                    <div className="fire-facts">
+                      <div>
+                        <span>Уровень</span>
+                        <RiskBadge level={fireResult.risk_level} />
+                      </div>
+                      <div>
+                        <span>Модель</span>
+                        <strong>{fireResult.model_id}</strong>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3>Распределение классов</h3>
+                      <div className="fire-prob-list">
+                        {(fireResult.probabilities || []).map((item) => (
+                          <div className="fire-prob-row" key={item.label}>
+                            <span>{item.label_ru}</span>
+                            <div className="fire-prob-track">
+                              <div
+                                className="fire-prob-fill"
+                                style={{
+                                  width: `${Math.max(item.probability * 100, 1)}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="fire-prob-value">
+                              {(item.probability * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="fire-model-note">
+                      Индекс риска — вероятностно взвешенная оценка классов
+                      (от воды и негорючих поверхностей до очень высокой
+                      опасности). Это вспомогательная оценка, а не официальный
+                      прогноз.
+                    </p>
+                  </div>
+                )}
               </article>
             </section>
           )}
