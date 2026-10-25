@@ -32,7 +32,7 @@ from typing import Any
 # uses national averages; the ISDM-fitted model is a separate, data-driven method.
 LAMBDA0 = 0.0012
 BETA = 0.01
-GAMMA = 0.0012
+GAMMA = 0.0001
 
 LEVEL_NAMES: tuple[tuple[str, str], ...] = (
     ("very_low", "очень низкий"),
@@ -154,7 +154,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по населённым пунктам. Риск "
-                        "падает в e раз примерно на 830 м."
+                        "падает в e раз примерно на 10 км."
                     ),
                 },
                 "area_ha": {
