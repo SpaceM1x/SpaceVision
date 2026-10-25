@@ -908,6 +908,56 @@ function AiExplanationView({ explanation }) {
   );
 }
 
+const ML_FEATURE_LABELS = {
+  dist_road_m: "До дороги, м",
+  dist_settlement_m: "До населённого пункта, м",
+  dist_railway_m: "До железной дороги, м",
+  district: "Район (код)",
+  month: "Месяц",
+};
+
+function MlExplanationView({ explanation }) {
+  if (!explanation || explanation.method !== "ml") return null;
+  const result = explanation.result || {};
+  return (
+    <div className="explanation formula-explanation">
+      <div className="explanation-kv">
+        <div>
+          <span>Модель</span>
+          <strong>{explanation.model?.name}</strong>
+        </div>
+        <div>
+          <span>Обучение</span>
+          <strong>{explanation.model?.training}</strong>
+        </div>
+        <div>
+          <span>Интенсивность</span>
+          <strong>{formatVal(result.intensity_per_ha_year)} пож./(га·год)</strong>
+        </div>
+        <div>
+          <span>Вероятность за год на 1 га</span>
+          <strong>{formatPercent(result.percent)}%</strong>
+        </div>
+      </div>
+      <table className="explanation-factors formula-params">
+        <tbody>
+          {(explanation.features || []).map((feature) => (
+            <tr key={feature.key}>
+              <td>{ML_FEATURE_LABELS[feature.key] || feature.key}</td>
+              <td>{formatVal(feature.value)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ul className="formula-assumptions">
+        {(explanation.assumptions || []).map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function FormulaExplanationView({ explanation }) {
   if (!explanation || explanation.method !== "formula") return null;
   const inputs = explanation.inputs;
@@ -1033,14 +1083,15 @@ function FormulaExplanationView({ explanation }) {
 
 function RiskHistoryItem({ record, expanded, onToggle }) {
   const isAi = record.explanation?.method === "ai";
+  const isMl = record.explanation?.method === "ml";
   const isFormula = record.explanation?.method === "formula";
   const hasFormulaResult = isFormula && record.explanation?.result;
   return (
     <div className="risk-history-item">
       <button className="risk-history-summary" onClick={onToggle}>
         <span className="risk-history-summary-main">
-          <span className={`method-badge ${isAi ? "ai" : "formula"}`}>
-            {isAi ? "ИИ" : "Формула"}
+          <span className={`method-badge ${isAi || isMl ? "ai" : "formula"}`}>
+            {isAi ? "ИИ" : isMl ? "ИИ · реестр" : "Формула"}
           </span>
           {record.summary}
         </span>
@@ -1848,7 +1899,9 @@ export default function App() {
                                 {formatPercent(pointRisk.fire_probability * 100)}% ·{" "}
                                 {pointRisk.method === "ai"
                                   ? "ИИ-модель"
-                                  : "формула"}
+                                  : pointRisk.method === "ml"
+                                    ? "ИИ · реестр"
+                                    : "формула"}
                               </strong>
                               <div style={{ margin: "6px 0" }}>
                                 <RiskBadge level={pointRisk.risk_level} />
@@ -1919,11 +1972,19 @@ export default function App() {
                       >
                         <BrainCircuit size={15} /> ИИ-модель
                       </button>
+                      <button
+                        className={riskMethod === "ml" ? "method-btn active" : "method-btn"}
+                        onClick={() => handleMethodChange("ml")}
+                      >
+                        <BrainCircuit size={15} /> ИИ · реестр
+                      </button>
                     </div>
                     <p className="method-note">
                       {riskMethod === "formula"
                         ? "Годовая вероятность по расстояниям до дороги и населённого пункта, измеренным на карте."
-                        : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
+                        : riskMethod === "ml"
+                          ? "Модель, обученная на реестре пожаров ИСДМ: дороги, посёлки, железные дороги, район и месяц."
+                          : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
                     </p>
                     {riskMethod === "ai" && (
                       <div className={`method-model-state ${fireStatus?.state || "unknown"}`}>
@@ -1984,7 +2045,9 @@ export default function App() {
                           <span>
                             {pointRisk.method === "ai"
                               ? "по снимку · текущий сезон"
-                              : "по слоям карты · за год"}
+                              : pointRisk.method === "ml"
+                                ? "по реестру ИСДМ · за год"
+                                : "по слоям карты · за год"}
                           </span>
                         </div>
                         <div className="risk-hero-facts">
@@ -2007,13 +2070,19 @@ export default function App() {
                           <div className="risk-fact">
                             <span>Метод</span>
                             <strong>
-                              {pointRisk.method === "ai" ? "ИИ-модель" : "Формула"}
+                              {pointRisk.method === "ai"
+                                ? "ИИ-модель"
+                                : pointRisk.method === "ml"
+                                  ? "ИИ · реестр"
+                                  : "Формула"}
                             </strong>
                           </div>
                         </div>
                       </div>
                       {pointRisk.method === "ai" ? (
                         <AiExplanationView explanation={pointRisk.explanation} />
+                      ) : pointRisk.method === "ml" ? (
+                        <MlExplanationView explanation={pointRisk.explanation} />
                       ) : (
                         <FormulaExplanationView explanation={pointRisk.explanation} />
                       )}
