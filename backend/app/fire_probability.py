@@ -35,14 +35,16 @@ LAMBDA0 = 4.90559e-05
 BETA = 2.67187e-05
 GAMMA = 1.17875e-05
 
-# Annual probability thresholds, in percent.  These are relative classes for a
-# one-hectare point estimate, not official fire-danger classes.
+# Annual probability thresholds, in percent, for a one-hectare point.  They are
+# the 20/40/60/80th percentiles of the fitted formula over random points in
+# Buryatia, so the classes are relative to this region, not official classes.
 RISK_THRESHOLDS: tuple[tuple[float, str, str], ...] = (
-    (0.01, "very_low", "очень низкий"),
-    (0.05, "low", "низкий"),
-    (0.15, "moderate", "умеренный"),
+    (0.0016, "very_low", "очень низкий"),
+    (0.0025, "low", "низкий"),
+    (0.0033, "moderate", "средний"),
+    (0.0041, "high", "высокий"),
 )
-ELEVATED_LEVEL = ("elevated", "повышенный")
+TOP_RISK_LEVEL = ("very_high", "очень высокий")
 
 
 class FireProbabilityError(ValueError):
@@ -173,10 +175,11 @@ class FireProbabilityResult:
                 "code": self.risk_level,
                 "label_ru": self.risk_level_ru,
                 "thresholds_percent": {
-                    "very_low": "< 0.01",
-                    "low": "0.01–0.05",
-                    "moderate": "0.05–0.15",
-                    "elevated": "≥ 0.15",
+                    "very_low": "< 0.0016",
+                    "low": "0.0016–0.0025",
+                    "moderate": "0.0025–0.0033",
+                    "high": "0.0033–0.0041",
+                    "very_high": "≥ 0.0041",
                 },
                 "note": (
                     "Это относительные классы годовой вероятности для 1 га, "
@@ -219,7 +222,7 @@ def risk_level_from_percent(percent: float) -> tuple[str, str]:
     for threshold, code, label in RISK_THRESHOLDS:
         if value < threshold:
             return code, label
-    return ELEVATED_LEVEL
+    return TOP_RISK_LEVEL
 
 
 def _validate_distance(name: str, value: float | None) -> float:

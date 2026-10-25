@@ -92,13 +92,14 @@ const TAB_META = {
 const RISK_LABELS = {
   very_low: "Очень низкий",
   low: "Низкий",
-  moderate: "Умеренный",
-  elevated: "Повышенный",
+  moderate: "Средний",
   medium: "Средний",
   high: "Высокий",
+  very_high: "Очень высокий",
+  elevated: "Очень высокий",
 };
 const RISK_GROUPS = {
-  high: ["high", "elevated"],
+  high: ["high", "very_high", "elevated"],
   medium: ["medium", "moderate"],
   low: ["low", "very_low"],
 };
