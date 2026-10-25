@@ -21,7 +21,7 @@ class ResolvedDistance:
     """A distance and the source that supplied it."""
 
     distance_m: float | None
-    source: str  # manual | shp | osm | none
+    source: str  # map | shp | osm | none
 
 
 @dataclass(frozen=True)
@@ -59,15 +59,16 @@ def nearest_distance_m(
 
 def _resolve_distance(
     *,
-    explicit: float | None,
+    map_value: float | None,
     layer: VectorLayerCache | None,
     osm_value: float | None,
     lat: float,
     lon: float,
     label: str,
 ) -> ResolvedDistance:
-    if explicit is not None:
-        return ResolvedDistance(float(explicit), "manual")
+    # Distances measured by the Leaflet map module are authoritative.
+    if map_value is not None:
+        return ResolvedDistance(float(map_value), "map")
     if layer is not None:
         return ResolvedDistance(
             nearest_distance_m(lat, lon, layer, label=label),
@@ -89,30 +90,29 @@ def calculate_point_fire_probability(
     settlement_distance_m: float | None = None,
     osm_lookup: Callable[[float, float], Mapping[str, float | None]] | None = None,
 ) -> PointProbabilityResult:
-    """Resolve distances automatically and calculate lower/base/upper risk.
+    """Resolve distances and calculate the annual formula probability.
 
     Priority for each distance:
-    1. an explicit ``*_distance_m`` argument (manual/what-if mode);
-    2. a local vector layer (``roads`` or ``settlements``);
-    3. the optional OSM lookup (``osm_lookup``);
+    1. the value measured in the Leaflet map module (``road_distance_m`` /
+       ``settlement_distance_m``);
+    2. the local vector layer (``roads`` or ``settlements``) as a fallback;
+    3. the optional OSM lookup (``osm_lookup``) as a last resort;
     4. otherwise the distance is missing and ``DistanceDataError`` is raised.
 
-    The caller can pass preloaded ``VectorLayerCache`` objects, so this function
-    does not know how the SHP files were obtained.  Use
-    :func:`app.vector_data.build_vector_cache` to load a layer from a file.
+    The map values are the normal path: the browser measures the distance to
+    the nearest feature of the displayed layers and passes both numbers to the
+    API.
     """
     need_osm = (
-        road_distance_m is None
-        and roads is None
-        or settlement_distance_m is None
-        and settlements is None
+        (road_distance_m is None and roads is None)
+        or (settlement_distance_m is None and settlements is None)
     )
     osm_context: Mapping[str, float | None] = {}
     if need_osm and osm_lookup is not None:
         osm_context = osm_lookup(lat, lon)
 
     road = _resolve_distance(
-        explicit=road_distance_m,
+        map_value=road_distance_m,
         layer=roads,
         osm_value=osm_context.get("road_distance_m"),
         lat=lat,
@@ -120,7 +120,7 @@ def calculate_point_fire_probability(
         label="road",
     )
     settlement = _resolve_distance(
-        explicit=settlement_distance_m,
+        map_value=settlement_distance_m,
         layer=settlements,
         osm_value=osm_context.get("settlement_distance_m"),
         lat=lat,
@@ -137,7 +137,7 @@ def calculate_point_fire_probability(
         raise DistanceDataError(
             "Недостаточно данных для расчёта: нет расстояния до слоя "
             + ", ".join(missing)
-            + ". Загрузите векторный слой или передайте расстояние явно."
+            + ". Включите соответствующий слой карты или загрузите векторный слой."
         )
 
     result = calculate_fire_probability(

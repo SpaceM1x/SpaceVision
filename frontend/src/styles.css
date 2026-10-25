@@ -2640,135 +2640,51 @@ button[type="submit"]:hover:not(:disabled),
   color: #4f46e5;
 }
 
-.method-badge.range {
-  background: #e0f2fe;
-  color: #0369a1;
-}
+/* ---------- Formula probability result ---------- */
 
-.range-manual {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--line);
-}
-
-.range-manual p {
-  margin: 0 0 8px;
-  color: var(--ink-500);
-  font-size: 11.5px;
-  line-height: 1.4;
-}
-
-.range-manual-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.range-manual label {
+.formula-result-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  color: var(--ink-500);
-  font-size: 10.5px;
-  font-weight: 650;
-}
-
-.range-manual input {
-  width: 100%;
-  padding: 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--ink-900);
-  font: inherit;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.range-manual input:focus {
-  outline: 2px solid var(--green-300);
-  outline-offset: 1px;
-}
-
-/* ---------- Lower / base / upper probability range ---------- */
-
-.range-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
   margin-bottom: 12px;
-}
-
-.range-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid var(--line);
+  padding: 12px 14px;
+  border: 1px solid #f3ddb7;
   border-radius: 10px;
-  background: var(--surface);
+  background: #fffaf1;
 }
 
-.range-card span {
+.formula-result-card span {
   color: var(--ink-500);
   font-size: 10.5px;
   line-height: 1.25;
 }
 
-.range-card strong {
-  font-size: 17px;
+.formula-result-card strong {
+  color: #b45309;
+  font-size: 24px;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-.range-card small {
+.formula-result-card small {
   color: var(--ink-500);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 1.3;
 }
 
-.range-card.lower {
-  border-color: #c8e8d5;
-  background: #f5fcf8;
-}
-
-.range-card.lower strong {
-  color: #177a49;
-}
-
-.range-card.base {
-  border-color: #f3ddb7;
-  background: #fffaf1;
-}
-
-.range-card.base strong {
-  color: #b45309;
-}
-
-.range-card.upper {
-  border-color: #f3c6c6;
-  background: #fff7f7;
-}
-
-.range-card.upper strong {
-  color: #b91c1c;
-}
-
-.range-params {
+.formula-params {
   margin-top: 8px;
 }
 
-.range-params th,
-.range-params td {
+.formula-params th,
+.formula-params td {
   padding: 7px 8px;
   border-top: 1px solid var(--line);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.range-params th {
+.formula-params th {
   color: var(--ink-500);
   font-size: 10.5px;
   font-weight: 700;
@@ -2776,22 +2692,18 @@ button[type="submit"]:hover:not(:disabled),
   letter-spacing: 0.04em;
 }
 
-.range-params th:first-child,
-.range-params td:first-child {
+.formula-params th:first-child,
+.formula-params td:first-child {
   width: 40%;
   text-align: left;
 }
 
-.range-params th:nth-child(2),
-.range-params td:nth-child(2),
-.range-params th:nth-child(3),
-.range-params td:nth-child(3),
-.range-params th:nth-child(4),
-.range-params td:nth-child(4) {
-  width: 20%;
+.formula-params th:nth-child(2),
+.formula-params td:nth-child(2) {
+  width: 35%;
 }
 
-.range-level {
+.formula-level {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -2805,12 +2717,12 @@ button[type="submit"]:hover:not(:disabled),
   line-height: 1.4;
 }
 
-.range-sources {
+.formula-sources {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
 
-.range-assumptions {
+.formula-assumptions {
   margin: 8px 0 0;
   padding-left: 18px;
   color: var(--ink-500);
@@ -2818,15 +2730,11 @@ button[type="submit"]:hover:not(:disabled),
   line-height: 1.5;
 }
 
-.range-assumptions li + li {
+.formula-assumptions li + li {
   margin-top: 4px;
 }
 
 @media (max-width: 520px) {
-  .range-cards {
-    grid-template-columns: 1fr;
-  }
-
   .method-btn {
     padding-inline: 5px;
     font-size: 11.5px;

@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import math
 import pytest
 from pyproj import Transformer
 from shapely.geometry import Point
@@ -103,19 +104,6 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
             "road_density": 0.52, "settlement_density": 0.58,
         },
     )
-    monkeypatch.setattr(
-        main_mod,
-        "fire_weather",
-        lambda lat, lon: {
-            "index": 4200.0,
-            "normalized": 0.83,
-            "dry_days": 9,
-            "days": 30,
-            "source": "nasa-power",
-            "period": "test",
-            "error": None,
-        },
-    )
 
     client = TestClient(main_mod.app)
     base = str(roads_shp)
@@ -137,13 +125,41 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     assert body["road_distance_m"] < 5.0
     assert 0.99 < body["road_influence"] <= 1.0
     assert body["road_source"] == "shp"
-    # No double counting: the final probability equals the logistic P_base.
     assert abs(body["fire_probability"] - body["base_probability"]) < 1e-12
     assert body["method"] == "formula"
-    assert body["explanation"]["weather"]["normalized"] == 0.83
-    assert any(
-        factor["name"] == "Погодная опасность (FWI)"
-        for factor in body["explanation"]["base"]["factors"]
+    assert body["explanation"]["method"] == "formula"
+    assert body["explanation"]["parameters"]["lambda0"]["value"] == 0.0012
+    assert body["explanation"]["distance_sources"] == {
+        "road": "shp",
+        "settlement": "osm",
+    }
+
+    # Distances measured in the Leaflet map module take priority over the
+    # backend SHP/OSM fallback.
+    map_formula = client.get(
+        "/risk/point",
+        params={
+            "lat": 51.80,
+            "lon": 108.05,
+            "method": "formula",
+            "road_distance_m": 200,
+            "settlement_distance_m": 500,
+        },
+    )
+    assert map_formula.status_code == 200, map_formula.text
+    map_body = map_formula.json()
+    assert map_body["method"] == "formula"
+    assert map_body["road_distance_m"] == 200.0
+    assert map_body["settlement_distance_m"] == 500.0
+    assert map_body["road_source"] == "map"
+    assert map_body["explanation"]["distance_sources"] == {
+        "road": "map",
+        "settlement": "map",
+    }
+    assert map_body["fire_probability"] == pytest.approx(
+        -math.expm1(
+            -0.0012 * math.exp(-0.0025 * 200) * math.exp(-0.0012 * 500)
+        )
     )
 
     # AI method: use a fake ready model and a fake tile, but exercise the real
@@ -212,69 +228,14 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     fallback_body = fallback.json()
     assert fallback_body["road_source"] == "osm"
     assert abs(fallback_body["road_distance_m"] - 120.0) < 1e-6
-    assert fallback_body["explanation"]["road"]["source"] == "osm"
+    assert fallback_body["explanation"]["distance_sources"] == {
+        "road": "osm",
+        "settlement": "osm",
+    }
 
     ai_without_shp = client.get(
         "/risk/point", params={"lat": 51.80, "lon": 108.05, "method": "ai"}
     )
     assert ai_without_shp.status_code == 200, ai_without_shp.text
     assert ai_without_shp.json()["road_distance_m"] is None
-
-    # Range method: OSM fallback provides both distances, the new model
-    # returns all three scenarios and persists the base scenario in history.
-    monkeypatch.setattr(main_mod, "_optional_settlements_cache", lambda: None)
-    range_response = client.get(
-        "/risk/point",
-        params={
-            "lat": 51.80,
-            "lon": 108.05,
-            "method": "range",
-            "area_ha": 10,
-        },
-    )
-    assert range_response.status_code == 200, range_response.text
-    range_body = range_response.json()
-    assert range_body["method"] == "range"
-    assert range_body["road_source"] == "osm"
-    assert range_body["road_distance_m"] == pytest.approx(120.0)
-    assert range_body["settlement_distance_m"] == pytest.approx(450.0)
-    assert range_body["area_ha"] == 10.0
-    assert range_body["probability_range"]["area_ha"] == 10.0
-    assert (
-        range_body["probability_range"]["lower"]["probability"]
-        < range_body["probability_range"]["base"]["probability"]
-        < range_body["probability_range"]["upper"]["probability"]
-    )
-    assert range_body["fire_probability"] == pytest.approx(
-        range_body["probability_range"]["base"]["probability"]
-    )
-    assert range_body["risk_level"] == "elevated"
-    assert range_body["risk_level_ru"] == "повышенный"
-    assert range_body["explanation"]["method"] == "range"
-    assert range_body["explanation"]["distance_sources"] == {
-        "road": "osm",
-        "settlement": "osm",
-    }
-
-    # Manual distances keep the range method usable when neither local layers
-    # nor OSM are available (what-if mode).
-    manual_range = client.get(
-        "/risk/point",
-        params={
-            "lat": 51.80,
-            "lon": 108.05,
-            "method": "range",
-            "road_distance_m": 100,
-            "settlement_distance_m": 500,
-        },
-    )
-    assert manual_range.status_code == 200, manual_range.text
-    manual_body = manual_range.json()
-    assert manual_body["road_source"] == "manual"
-    assert manual_body["road_distance_m"] == 100.0
-    assert manual_body["settlement_distance_m"] == 500.0
-    assert manual_body["explanation"]["distance_sources"] == {
-        "road": "manual",
-        "settlement": "manual",
-    }
 

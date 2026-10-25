@@ -84,20 +84,20 @@ export async function getPointRisk(
   lon,
   method = "formula",
   areaHa = 1,
-  overrides = {}
+  distances = {}
 ) {
   const params = new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
     method,
   });
-  if (method === "range") {
+  if (method === "formula") {
     params.set("area_ha", String(areaHa));
-    if (overrides.roadDistanceM != null) {
-      params.set("road_distance_m", String(overrides.roadDistanceM));
+    if (distances.roadDistanceM != null) {
+      params.set("road_distance_m", String(distances.roadDistanceM));
     }
-    if (overrides.settlementDistanceM != null) {
-      params.set("settlement_distance_m", String(overrides.settlementDistanceM));
+    if (distances.settlementDistanceM != null) {
+      params.set("settlement_distance_m", String(distances.settlementDistanceM));
     }
   }
   const response = await fetchWithTimeout(
@@ -106,6 +106,38 @@ export async function getPointRisk(
       headers: { Authorization: `Bearer ${token}` },
     },
     120000
+  );
+  return parseResponse(response);
+}
+
+export async function getSettlements(token, lat, lon, radiusM = 40000) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    radius_m: String(radiusM),
+  });
+  const response = await fetchWithTimeout(
+    `${API_URL}/settlements/geojson?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    30000
+  );
+  return parseResponse(response);
+}
+
+export async function getOsmRoads(token, lat, lon, radiusM = 5000) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    radius_m: String(radiusM),
+  });
+  const response = await fetchWithTimeout(
+    `${API_URL}/roads/osm/geojson?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    30000
   );
   return parseResponse(response);
 }
