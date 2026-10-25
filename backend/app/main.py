@@ -2,7 +2,6 @@
 import logging
 import json
 import math
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -12,7 +11,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pyproj import Transformer
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 from sqlalchemy.orm import Session
 
 from .analytics import build_analytics_summary
@@ -25,30 +24,28 @@ from .database import (
     ensure_schema,
     get_db,
 )
-from .distance import distance_to_nearest_road, road_density_near_point
+from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
-from .fire_probability import BASE_SCENARIO, format_percent
+from .fire_probability import BETA, GAMMA, LAMBDA0, format_percent
 from .fire_image import (
     FireImageModelError,
     classify_image_bytes,
     model_status,
     start_preload,
 )
-from .fire_risk import (
-    base_probability_breakdown,
-    final_probability,
-    risk_level_from_probability,
-)
-from .gis import select_metric_crs, to_metric
+from .fire_risk import risk_level_from_probability
 from .models import Upload, User
-from .osm import nearest_distances_from_osm
+from .osm import (
+    nearest_distances_from_osm,
+    roads_geojson_from_osm,
+    settlements_geojson_from_osm,
+)
 from .point_probability import (
     DistanceDataError,
     calculate_point_fire_probability,
 )
 from .road_data import (
     RoadDataError,
-    RoadDataProvider,
     build_roads_cache,
     get_roads_cache,
     invalidate_roads_cache,
@@ -70,7 +67,6 @@ from .schemas import (
     PointRiskOut,
     UploadOut,
 )
-from .weather import fire_weather
 
 app = FastAPI(title="SpaceVision API (AI + SHP)")
 
@@ -283,24 +279,69 @@ def clear_roads(current_user: User = Depends(get_current_user)) -> dict:
     return {"removed": removed, "uploaded": False}
 
 
-_ROAD_SOURCE_LABELS = {"shp": "SHP", "osm": "OSM (резерв)", "none": "нет данных"}
+@app.get("/settlements/geojson")
+def settlements_geojson(
+    lat: float,
+    lon: float,
+    radius_m: int = Query(40000, ge=1000, le=150000),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Return settlements for the Leaflet map module.
+
+    A local ``SETTLEMENTS_SHP_PATH`` layer wins when it is configured and has
+    features around the requested point; otherwise OSM places are returned.
+    The browser then measures the distance to the nearest feature itself.
+    """
+    del current_user
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="Некорректные координаты.")
+
+    cache = _optional_settlements_cache()
+    if cache is not None:
+        gdf = cache.gdf.to_crs("EPSG:4326")
+        # Approximate WGS84 degree window for the requested radius.
+        lat_delta = radius_m / 111_320.0
+        lon_delta = radius_m / max(1.0, 111_320.0 * abs(math.cos(math.radians(lat))))
+        window = box(
+            lon - lon_delta,
+            lat - lat_delta,
+            lon + lon_delta,
+            lat + lat_delta,
+        )
+        try:
+            subset = gdf[gdf.geometry.intersects(window)]
+        except Exception:  # pragma: no cover - invalid user geometry
+            subset = gdf.iloc[0:0]
+        if not subset.empty:
+            payload = json.loads(subset.to_json())
+            payload["source"] = "shp"
+            return payload
+
+    return settlements_geojson_from_osm(lat, lon, radius_m)
+
+
+@app.get("/roads/osm/geojson")
+def roads_osm_geojson(
+    lat: float,
+    lon: float,
+    radius_m: int = Query(5000, ge=500, le=20000),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Road centrelines around a point from OSM, for when no SHP roads are loaded.
+
+    The browser measures the distance to the nearest road itself, so the
+    formula works without an uploaded roads file.
+    """
+    del current_user
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="Некорректные координаты.")
+    return roads_geojson_from_osm(lat, lon, radius_m)
+
 
 
 _AI_PROB_BASE = 0.005
 _AI_PROB_SCALE = 0.30
 _AI_PROB_EXP = 1.6
-
-_context_executor = ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="risk-context"
-)
-
-
-def _collect_risk_context(lat: float, lon: float) -> tuple[dict, dict]:
-    """Fetch optional OSM and fire-weather context concurrently."""
-    osm_future = _context_executor.submit(nearest_distances_from_osm, lat, lon)
-    weather_future = _context_executor.submit(fire_weather, lat, lon)
-    return osm_future.result(), weather_future.result()
-
 
 def _optional_settlements_cache():
     """Load the optional settlements SHP once; return ``None`` if absent."""
@@ -324,174 +365,18 @@ def _ai_probability(risk_score: float) -> float:
     return min(0.95, _AI_PROB_BASE + _AI_PROB_SCALE * (score**_AI_PROB_EXP))
 
 
-def _build_risk_reason(
-    p_fire: float,
-    p_base: float,
-    influence: float,
-    road_distance_m: float | None,
-    r0_m: float,
-    road_source: str,
-    weather: dict | None = None,
-) -> str:
-    percent = p_fire * 100.0
-    road_txt = (
-        f"ближайшая дорога в {road_distance_m:.0f} м"
-        if road_distance_m is not None
-        else "нет данных о дорогах"
-    )
-    source_txt = _ROAD_SOURCE_LABELS.get(road_source, road_source)
-    weather_txt = ""
-    if weather and weather.get("source") == "nasa-power":
-        weather_txt = (
-            f" Индекс Нестерова N={float(weather.get('index') or 0):.0f} "
-            f"(FWI={float(weather.get('normalized') or 0):.2f})."
-        )
-    return (
-        f"Вероятность возгорания {percent:.1f}% в текущем пожароопасном сезоне. "
-        f"Логит-модель: P_base {p_base * 100:.1f}%, вклад дороги учтён в P_base "
-        f"(I(R)={influence:.2f}, R0={r0_m:.0f} м, источник {source_txt}), "
-        f"{road_txt}.{weather_txt}"
-    )
-
-
-def _build_risk_summary(
+def _build_ai_summary(
     lat: float,
     lon: float,
     p_fire: float,
     *,
-    method: str = "formula",
     ai_label: str | None = None,
 ) -> str:
-    if method == "ai":
-        label = f", класс «{ai_label}»" if ai_label else ""
-        return (
-            f"{(p_fire * 100.0):.1f}% по снимку{label} "
-            f"(широта {lat:.4f}, долгота {lon:.4f})"
-        )
+    label = f", класс «{ai_label}»" if ai_label else ""
     return (
-        f"{(p_fire * 100.0):.1f}% в текущем пожароопасном сезоне "
+        f"{(p_fire * 100.0):.1f}% по снимку{label} "
         f"(широта {lat:.4f}, долгота {lon:.4f})"
     )
-
-
-def _build_risk_explanation(
-    *,
-    lat: float,
-    lon: float,
-    road_distance_m: float | None,
-    settlement_distance_m: float | None,
-    influence: float,
-    base: dict,
-    p_fire: float,
-    weather: dict | None = None,
-) -> dict:
-    """Build a structured, per-factor explanation of one calculation."""
-    coefficients = base["coefficients"]
-    source_txt = _ROAD_SOURCE_LABELS.get(base["road_source"], base["road_source"])
-    return {
-        "method": "formula",
-        "equation": (
-            "P_fire = 1 / (1 + exp(−logit)),  "
-            "logit = b0 + Σ b_i·x_i + b_FWI·FWI"
-        ),
-        "coordinates": {"lat": lat, "lon": lon},
-        "weather": weather,
-        "base": {
-            "label": "Вероятность P_fire (логит-модель)",
-            "formula": (
-                f"{coefficients['constant']:.2f} "
-                f"+ {coefficients['road']:.2f}·дорога "
-                f"+ {coefficients['settlement']:.2f}·поселение "
-                f"+ {coefficients['road_density']:.2f}·ρ_дорог "
-                f"+ {coefficients['settlement_density']:.2f}·ρ_поселений "
-                f"+ {coefficients['season']:.2f}·сезон "
-                f"+ {coefficients['diurnal']:.2f}·суточ "
-                f"+ {coefficients['fire_weather']:.2f}·FWI "
-                f"+ {coefficients['interaction']:.2f}·дорога·поселение"
-            ),
-            "result": base["p_base"],
-            "logit": base["logit"],
-            "factors": [
-                {"name": "Свободный член b0", "value": base["constant"], "note": "смещение логита"},
-                {
-                    "name": "Близость к дороге",
-                    "value": base["road_contribution"],
-                    "input": base["road_distance_m"],
-                    "note": (
-                        f"{coefficients['road']:.2f}·I(R), источник {source_txt}"
-                    ),
-                },
-                {
-                    "name": "Близость к поселению",
-                    "value": base["settlement_contribution"],
-                    "input": base["settlement_distance_m"],
-                    "note": (
-                        f"{coefficients['settlement']:.2f}·exp(−d/3000 м)"
-                    ),
-                },
-                {
-                    "name": "Плотность дорог",
-                    "value": base["road_density_contribution"],
-                    "input": base["road_density"],
-                    "note": f"{coefficients['road_density']:.2f}·ρ_дорог (SHP/OSM)",
-                },
-                {
-                    "name": "Плотность поселений",
-                    "value": base["settlement_density_contribution"],
-                    "input": base["settlement_density"],
-                    "note": f"{coefficients['settlement_density']:.2f}·ρ_поселений",
-                },
-                {
-                    "name": "Сезонный фактор",
-                    "value": base["season_contribution"],
-                    "input": base["season"],
-                    "note": (
-                        f"{coefficients['season']:.2f}·сезон "
-                        f"(месяц {base['season_month']})"
-                    ),
-                },
-                {
-                    "name": "Суточный фактор",
-                    "value": base["diurnal_contribution"],
-                    "input": base["diurnal"],
-                    "note": f"{coefficients['diurnal']:.2f}·пик (15:00)",
-                },
-                {
-                    "name": "Погодная опасность (FWI)",
-                    "value": base["fire_weather_contribution"],
-                    "input": base["fire_weather_index"],
-                    "note": (
-                        f"{coefficients['fire_weather']:.2f}·FWI "
-                        f"(индекс Нестерова: {weather.get('index', '—') if weather else '—'})"
-                    ),
-                },
-                {
-                    "name": "Взаимодействие дорога×поселение",
-                    "value": base["interaction_contribution"],
-                    "input": base["interaction"],
-                    "note": f"{coefficients['interaction']:.2f}·дорога·поселение",
-                },
-            ],
-        },
-        "road": {
-            "label": "Дорога в модели (учтена в P_base)",
-            "formula": "I(R) = 1 / (1 + R / R0)",
-            "R": road_distance_m,
-            "R0": base["road_r0_m"],
-            "source": base["road_source"],
-            "result": influence,
-        },
-        "final": {
-            "label": "Итоговая вероятность P_fire (текущий сезон)",
-            "formula": "P_fire = P_base (вклад дороги уже внутри логита)",
-            "result": p_fire,
-            "terms": [
-                {"name": "logit(P)", "value": base["logit"]},
-                {"name": "P_base", "value": base["p_base"]},
-                {"name": "P_fire", "value": p_fire},
-            ],
-        },
-    }
 
 
 def _build_ai_explanation(
@@ -546,7 +431,7 @@ def _build_ai_explanation(
 def point_risk(
     lat: float,
     lon: float,
-    method: Literal["formula", "ai", "range"] = "formula",
+    method: Literal["formula", "ai"] = "formula",
     area_ha: float = Query(1.0, gt=0, le=1_000_000),
     road_distance_m: float | None = Query(None, ge=0),
     settlement_distance_m: float | None = Query(None, ge=0),
@@ -579,65 +464,6 @@ def point_risk(
     influence = road_influence(r, R0_METERS) if r is not None else 0.0
     road_source = "shp" if r is not None else "none"
 
-    if method == "range":
-        settlements = _optional_settlements_cache()
-        try:
-            point_result = calculate_point_fire_probability(
-                lat,
-                lon,
-                area_ha=area_ha,
-                roads=cache,
-                settlements=settlements,
-                road_distance_m=road_distance_m,
-                settlement_distance_m=settlement_distance_m,
-                osm_lookup=nearest_distances_from_osm,
-            )
-        except DistanceDataError as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
-
-        result = point_result.result
-        explanation = result.explanation()
-        explanation["distance_sources"] = {
-            "road": point_result.road.source,
-            "settlement": point_result.settlement.source,
-        }
-        explanation["interpretation"] = result.summary()
-        summary = result.summary()
-        record_fire_risk(
-            db,
-            username=current_user.username,
-            lat=lat,
-            lon=lon,
-            fire_probability=result.base.probability,
-            risk_level=result.risk_level,
-            summary=summary,
-            explanation=explanation,
-        )
-        return PointRiskOut(
-            lat=lat,
-            lon=lon,
-            method="range",
-            road_distance_m=result.road_distance_m,
-            settlement_distance_m=result.settlement_distance_m,
-            road_influence=math.exp(-BASE_SCENARIO.beta * result.road_distance_m),
-            road_source=point_result.road.source,
-            base_probability=result.base.probability,
-            fire_probability=result.base.probability,
-            risk_level=result.risk_level,
-            risk_level_ru=result.risk_level_ru,
-            risk_reason=(
-                f"Годовая вероятность на {result.area_ha:g} га: "
-                f"нижняя {format_percent(result.lower.percent)}%, "
-                f"базовая {format_percent(result.base.percent)}%, "
-                f"верхняя {format_percent(result.upper.percent)}%. "
-                f"Уровень по базовому сценарию: {result.risk_level_ru}."
-            ),
-            summary=summary,
-            area_ha=result.area_ha,
-            probability_range=result.as_dict(),
-            explanation=explanation,
-        )
-
     if method == "ai":
         status = model_status()
         if status["state"] in {"not_loaded", "loading"}:
@@ -664,8 +490,8 @@ def point_risk(
 
         p_ai = _ai_probability(float(ai.get("risk_score") or 0.0))
         level = risk_level_from_probability(p_ai * 100.0)
-        summary = _build_risk_summary(
-            lat, lon, p_ai, method="ai", ai_label=ai.get("predicted_ru")
+        summary = _build_ai_summary(
+            lat, lon, p_ai, ai_label=ai.get("predicted_ru")
         )
         explanation = _build_ai_explanation(
             lat=lat, lon=lon, p_ai=p_ai, ai=ai, tile=tile
@@ -704,62 +530,57 @@ def point_risk(
             explanation=explanation,
         )
 
-    # Formula method: OSM settlement/density context, live fire weather, season
-    # and time of day. The road factor is taken from the SHP layer (OSM is a
-    # fallback when no SHP is available).
-    osm_context, weather = _collect_risk_context(lat, lon)
-    if (
-        cache is not None
-        and roads_metric is not None
-        and point_metric is not None
-        and not roads_metric.empty
-    ):
-        try:
-            shp_density = road_density_near_point(
-                point_metric, roads_metric, cache.tree
-            )
-            road_density = min(1.0, shp_density)
-        except Exception:  # pragma: no cover - defensive for invalid user geometry
-            road_density = 0.0
-    else:
-        road_density = float(osm_context["road_density"] or 0.0)
+    # Formula method: annual probability from the exponential distance-decay
+    # model.  The Leaflet map module measures the two distances against the
+    # displayed layers and sends them as query parameters; SHP/OSM remain a
+    # defensive fallback for direct API calls.
+    settlements = _optional_settlements_cache()
+    try:
+        point_result = calculate_point_fire_probability(
+            lat,
+            lon,
+            area_ha=area_ha,
+            roads=cache,
+            settlements=settlements,
+            road_distance_m=road_distance_m,
+            settlement_distance_m=settlement_distance_m,
+            osm_lookup=nearest_distances_from_osm,
+        )
+    except DistanceDataError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
-    base = base_probability_breakdown(
-        road_distance_m=osm_context["road_distance_m"],
-        settlement_distance_m=osm_context["settlement_distance_m"],
-        road_density=road_density,
-        settlement_density=float(osm_context["settlement_density"] or 0.0),
-        now_utc=datetime.utcnow(),
-        lon=lon,
-        road_distance_shp_m=r,
-        road_r0_m=R0_METERS,
-        fire_weather_index=float(weather.get("normalized") or 0.0),
+    result = point_result.result
+    explanation = result.explanation()
+    explanation["coordinates"] = {"lat": lat, "lon": lon}
+    explanation["distance_sources"] = {
+        "road": point_result.road.source,
+        "settlement": point_result.settlement.source,
+    }
+    summary = result.summary()
+    source_labels = {
+        "map": "слои карты",
+        "shp": "SHP",
+        "osm": "OSM (резерв)",
+        "none": "нет данных",
+    }
+    reason = (
+        f"Формула: λ = {LAMBDA0:g} · exp(−{BETA:g} · "
+        f"{result.road_distance_m:.0f} м) · exp(−{GAMMA:g} · "
+        f"{result.settlement_distance_m:.0f} м) = "
+        f"{result.lambda_per_ha_year:.8f} пож./(га·год); "
+        f"P = {format_percent(result.percent)}% за год на "
+        f"{result.area_ha:g} га. Уровень: {result.risk_level_ru}. "
+        f"Источник расстояний: {source_labels.get(point_result.road.source, point_result.road.source)} "
+        f"и {source_labels.get(point_result.settlement.source, point_result.settlement.source)}."
     )
-    influence = base["road_proximity"]
-    p_base = base["p_base"]
-    p_fire = final_probability(p_base)
-    level = risk_level_from_probability(p_fire * 100.0)
 
-    explanation = _build_risk_explanation(
-        lat=lat,
-        lon=lon,
-        road_distance_m=base["road_distance_m"],
-        settlement_distance_m=osm_context["settlement_distance_m"],
-        influence=influence,
-        base=base,
-        p_fire=p_fire,
-        weather=weather,
-    )
-    summary = _build_risk_summary(lat, lon, p_fire)
-
-    # Persist the calculation into the history module.
     record_fire_risk(
         db,
         username=current_user.username,
         lat=lat,
         lon=lon,
-        fire_probability=p_fire,
-        risk_level=level,
+        fire_probability=result.probability,
+        risk_level=result.risk_level,
         summary=summary,
         explanation=explanation,
     )
@@ -768,23 +589,17 @@ def point_risk(
         lat=lat,
         lon=lon,
         method="formula",
-        road_distance_m=base["road_distance_m"],
-        settlement_distance_m=osm_context["settlement_distance_m"],
-        road_influence=influence,
-        road_source=base["road_source"],
-        base_probability=p_base,
-        fire_probability=p_fire,
-        risk_level=level,
-        risk_reason=_build_risk_reason(
-            p_fire,
-            p_base,
-            influence,
-            base["road_distance_m"],
-            R0_METERS,
-            base["road_source"],
-            weather=weather,
-        ),
+        road_distance_m=result.road_distance_m,
+        settlement_distance_m=result.settlement_distance_m,
+        road_influence=result.road_decay,
+        road_source=point_result.road.source,
+        base_probability=result.probability,
+        fire_probability=result.probability,
+        risk_level=result.risk_level,
+        risk_level_ru=result.risk_level_ru,
+        risk_reason=reason,
         summary=summary,
+        area_ha=result.area_ha,
         explanation=explanation,
     )
 

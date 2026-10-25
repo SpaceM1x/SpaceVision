@@ -50,9 +50,7 @@ def test_point_probability_uses_local_layers(tmp_path):
     assert point.settlement.source == "shp"
     assert point.road.distance_m == pytest.approx(0.0, abs=2.0)
     assert point.settlement.distance_m > 1_000.0
-    assert point.result.base.probability > 0.0
-    assert point.result.lower.probability < point.result.base.probability
-    assert point.result.base.probability < point.result.upper.probability
+    assert point.result.probability > 0.0
 
 
 def test_point_probability_uses_osm_fallback():
@@ -72,7 +70,7 @@ def test_point_probability_uses_osm_fallback():
     assert point.settlement.distance_m == 500.0
 
 
-def test_point_probability_manual_distances_take_priority():
+def test_map_distances_take_priority():
     point = calculate_point_fire_probability(
         51.80,
         108.00,
@@ -84,8 +82,8 @@ def test_point_probability_manual_distances_take_priority():
         },
     )
 
-    assert point.road.source == "manual"
-    assert point.settlement.source == "manual"
+    assert point.road.source == "map"
+    assert point.settlement.source == "map"
     assert point.road.distance_m == 25.0
     assert point.settlement.distance_m == 75.0
 

@@ -19,7 +19,6 @@ import {
   MapPinned,
   Menu,
   Route,
-  Ruler,
   ShieldCheck,
   Upload,
   UserRound,
@@ -43,7 +42,9 @@ import {
   getPointRisk,
   getRiskHistory,
   getRoads,
+  getOsmRoads,
   getRoadsStatus,
+  getSettlements,
   getUploads,
   login,
   preloadFireModel,
@@ -72,7 +73,7 @@ const TAB_META = {
   },
   map: {
     title: "Карта риска",
-    subtitle: "Один модуль: формула, диапазон или ИИ-модель",
+    subtitle: "Один модуль: формула или ИИ-модель",
   },
   roads: {
     title: "Дороги",
@@ -115,6 +116,7 @@ const RISK_GROUPS = {
 };
 const ROLE_LABELS = { admin: "Администратор", viewer: "Оператор" };
 const DISTANCE_SOURCE_LABELS = {
+  map: "слой карты Leaflet",
   shp: "SHP",
   osm: "OSM (резерв)",
   manual: "задано вручную",
@@ -348,7 +350,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                 </span>
                 <span className="quick-action-body">
                   <strong>Рассчитать риск</strong>
-                  <span>Формула, диапазон или ИИ-модель</span>
+                  <span>Формула или ИИ-модель</span>
                 </span>
               </button>
               <button className="quick-action" onClick={() => onNavigate("ai-fire")}>
@@ -544,13 +546,6 @@ function TrendChart({ points }) {
   );
 }
 
-function parseOptionalDistance(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  const number = Number(text);
-  return Number.isFinite(number) && number >= 0 ? number : null;
-}
-
 function formatPercent(value) {
   if (value == null || !Number.isFinite(value)) return "—";
   if (value === 0) return "0";
@@ -570,6 +565,141 @@ function formatVal(value) {
     return value.toFixed(4);
   }
   return String(value);
+}
+
+const EARTH_RADIUS_M = 6371008.8;
+
+function haversineMeters(a, b) {
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const deltaLat = lat2 - lat1;
+  const deltaLon = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function localMeters(latlng, origin) {
+  const lat0 = (origin.lat * Math.PI) / 180;
+  return {
+    x: ((latlng.lng - origin.lng) * Math.PI * EARTH_RADIUS_M * Math.cos(lat0)) / 180,
+    y: ((latlng.lat - origin.lat) * Math.PI * EARTH_RADIUS_M) / 180,
+  };
+}
+
+function pointToSegmentDistance(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lengthSquared;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function ringContainsPoint(point, ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return false;
+  const x = point.lng;
+  const y = point.lat;
+  let inside = false;
+  for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+    const [xi, yi] = ring[index];
+    const [xj, yj] = ring[previous];
+    const crosses = (yi > y) !== (yj > y);
+    if (crosses && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function polygonContainsPoint(polygon, point) {
+  if (!Array.isArray(polygon) || polygon.length === 0) return false;
+  if (!ringContainsPoint(point, polygon[0])) return false;
+  return !polygon.slice(1).some((hole) => ringContainsPoint(point, hole));
+}
+
+function lineStringDistanceMeters(coordinates, origin) {
+  if (!Array.isArray(coordinates) || coordinates.length === 0) return Infinity;
+  let minimum = Infinity;
+  let previous = localMeters(
+    { lat: coordinates[0][1], lng: coordinates[0][0] },
+    origin
+  );
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const current = localMeters(
+      { lat: coordinates[index][1], lng: coordinates[index][0] },
+      origin
+    );
+    minimum = Math.min(
+      minimum,
+      pointToSegmentDistance(0, 0, previous.x, previous.y, current.x, current.y)
+    );
+    previous = current;
+  }
+  return minimum;
+}
+
+function geometryDistanceMeters(geometry, origin) {
+  if (!geometry) return Infinity;
+  const { type, coordinates } = geometry;
+  if (type === "Point") {
+    return haversineMeters(origin, {
+      lat: coordinates[1],
+      lng: coordinates[0],
+    });
+  }
+  if (type === "MultiPoint") {
+    return Math.min(
+      ...coordinates.map(([lng, lat]) => haversineMeters(origin, { lat, lng }))
+    );
+  }
+  if (type === "LineString") {
+    return lineStringDistanceMeters(coordinates, origin);
+  }
+  if (type === "MultiLineString" || type === "Polygon") {
+    if (type === "Polygon" && polygonContainsPoint(coordinates, origin)) return 0;
+    return Math.min(
+      ...coordinates.map((line) => lineStringDistanceMeters(line, origin))
+    );
+  }
+  if (type === "MultiPolygon") {
+    if (coordinates.some((polygon) => polygonContainsPoint(polygon, origin))) {
+      return 0;
+    }
+    return Math.min(
+      ...coordinates.flatMap((polygon) =>
+        polygon.map((ring) => lineStringDistanceMeters(ring, origin))
+      )
+    );
+  }
+  if (type === "GeometryCollection") {
+    return Math.min(
+      ...(geometry.geometries || []).map((item) =>
+        geometryDistanceMeters(item, origin)
+      )
+    );
+  }
+  return Infinity;
+}
+
+function geojsonNearestDistanceMeters(collection, latlng) {
+  const features = collection?.features;
+  if (!Array.isArray(features) || features.length === 0) return null;
+  let minimum = Infinity;
+  for (const feature of features) {
+    const distance = geometryDistanceMeters(feature?.geometry, latlng);
+    if (Number.isFinite(distance)) minimum = Math.min(minimum, distance);
+  }
+  return Number.isFinite(minimum) ? minimum : null;
+}
+
+function mapDistancesForPoint(latlng, roadsData, settlementsData) {
+  return {
+    roadDistanceM: geojsonNearestDistanceMeters(roadsData, latlng),
+    settlementDistanceM: geojsonNearestDistanceMeters(settlementsData, latlng),
+  };
 }
 
 function ExplanationView({ explanation }) {
@@ -778,80 +908,96 @@ function AiExplanationView({ explanation }) {
   );
 }
 
-function RangeExplanationView({ range, explanation }) {
-  const scenarios = range || explanation?.scenarios;
-  if (!scenarios?.base) return null;
+function FormulaExplanationView({ explanation }) {
+  if (!explanation || explanation.method !== "formula") return null;
+  const inputs = explanation.inputs;
+  const parameters = explanation.parameters;
+  const result = explanation.result;
+  const sources = explanation.distance_sources;
+  if (!inputs || !result) return null;
 
-  const parameters = explanation?.parameters;
-  const inputs = explanation?.inputs;
-  const level = explanation?.risk_level;
-  const sources = explanation?.distance_sources;
-  const area = inputs?.area_ha ?? range?.area_ha;
   const parameterRows = [
-    ["λ₀, пож./(га·год)", "lambda0"],
-    ["β, 1/м", "beta"],
-    ["γ, 1/м", "gamma"],
+    ["λ₀", "lambda0"],
+    ["β", "beta"],
+    ["γ", "gamma"],
   ];
 
   return (
-    <div className="explanation range-explanation">
-      <div className="range-cards">
-        {["lower", "base", "upper"].map((key) => {
-          const scenario = scenarios[key];
-          return (
-            <div className={`range-card ${key}`} key={key}>
-              <span>{scenario.label}</span>
-              <strong>{formatPercent(scenario.percent)}%</strong>
-              <small>
-                λ = {formatVal(scenario.lambda_per_ha_year)} пож./(га·год)
-              </small>
-            </div>
-          );
-        })}
+    <div className="explanation formula-explanation">
+      <div className="formula-result-card">
+        <span>Вероятность пожара за год</span>
+        <strong>{formatPercent(result.percent)}%</strong>
+        <small>
+          λ = {formatVal(result.lambda_per_ha_year)} пож./(га·год)
+        </small>
       </div>
 
       <details className="explanation-details" open>
         <summary>Формула и параметры</summary>
-        <div className="explanation-equation">
-          {explanation?.equation ||
-            "λ = λ₀ · exp(−β · R_road) · exp(−γ · R_settlement); P = 1 − exp(−λ · A)"}
+        <div className="explanation-equation">{explanation.equation}</div>
+        <div className="explanation-kv">
+          <span>До дороги: {inputs.road_distance_m?.toFixed(0)} м</span>
+          <span>
+            До населённого пункта: {inputs.settlement_distance_m?.toFixed(0)} м
+          </span>
+          <span>Площадь: {inputs.area_ha} га</span>
         </div>
-        {inputs && (
-          <div className="explanation-kv">
-            <span>R_road: {inputs.road_distance_m?.toFixed(0)} м</span>
-            <span>
-              R_settlement: {inputs.settlement_distance_m?.toFixed(0)} м
-            </span>
-            <span>A: {inputs.area_ha} га</span>
-          </div>
-        )}
-        {parameters && (
-          <table className="explanation-factors range-params">
-            <thead>
-              <tr>
-                <th>Параметр</th>
-                <th>Нижняя</th>
-                <th>Средняя</th>
-                <th>Верхняя</th>
+        <table className="explanation-factors formula-params">
+          <thead>
+            <tr>
+              <th>Параметр</th>
+              <th>Значение</th>
+              <th>Единица</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parameterRows.map(([label, key]) => (
+              <tr key={key}>
+                <td>{label}</td>
+                <td>{formatVal(parameters?.[key]?.value)}</td>
+                <td>{parameters?.[key]?.unit || "—"}</td>
               </tr>
-            </thead>
+            ))}
+            <tr>
+              <td>A</td>
+              <td>{formatVal(inputs.area_ha)}</td>
+              <td>га</td>
+            </tr>
+          </tbody>
+        </table>
+      </details>
+
+      {explanation.factors?.length > 0 && (
+        <div className="explanation-block">
+          <div className="explanation-block-head">
+            <strong>Расчёт по шагам</strong>
+            <em>{formatPercent(result.percent)}%</em>
+          </div>
+          <table className="explanation-factors">
             <tbody>
-              {parameterRows.map(([label, key]) => (
-                <tr key={key}>
-                  <td>{label}</td>
-                  <td>{formatVal(parameters[key]?.lower)}</td>
-                  <td>{formatVal(parameters[key]?.base)}</td>
-                  <td>{formatVal(parameters[key]?.upper)}</td>
+              {explanation.factors.map((factor) => (
+                <tr key={factor.key}>
+                  <td>
+                    <div>{factor.label}</div>
+                    <div className="factor-note">{factor.formula}</div>
+                  </td>
+                  <td>
+                    {factor.input != null ? `${formatVal(factor.input)} → ` : ""}
+                    {formatVal(factor.value)}
+                    {factor.unit ? ` ${factor.unit}` : ""}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        )}
-      </details>
+        </div>
+      )}
 
       {sources && (
-        <div className="explanation-kv range-sources">
-          <span>Дороги: {DISTANCE_SOURCE_LABELS[sources.road] || sources.road}</span>
+        <div className="explanation-kv formula-sources">
+          <span>
+            Дороги: {DISTANCE_SOURCE_LABELS[sources.road] || sources.road}
+          </span>
           <span>
             Населённые пункты:{" "}
             {DISTANCE_SOURCE_LABELS[sources.settlement] || sources.settlement}
@@ -859,17 +1005,17 @@ function RangeExplanationView({ range, explanation }) {
         </div>
       )}
 
-      {level && (
-        <div className="range-level">
-          <RiskBadge level={level.code} />
-          <span>{level.note}</span>
+      {explanation.risk_level && (
+        <div className="formula-level">
+          <RiskBadge level={explanation.risk_level.code} />
+          <span>{explanation.risk_level.note}</span>
         </div>
       )}
 
-      {explanation?.assumptions?.length > 0 && (
+      {explanation.assumptions?.length > 0 && (
         <details className="explanation-details">
           <summary>Допущения и ограничения</summary>
-          <ul className="range-assumptions">
+          <ul className="formula-assumptions">
             {explanation.assumptions.map((item, index) => (
               <li key={index}>{item}</li>
             ))}
@@ -878,8 +1024,8 @@ function RangeExplanationView({ range, explanation }) {
       )}
 
       <div className="explanation-risk">
-        Вероятность хотя бы одного пожара за год на {area} га:{" "}
-        <strong>{formatPercent(scenarios.base.percent)}%</strong>
+        Вероятность хотя бы одного пожара за год на {inputs.area_ha} га:{" "}
+        <strong>{formatPercent(result.percent)}%</strong>
       </div>
     </div>
   );
@@ -887,15 +1033,14 @@ function RangeExplanationView({ range, explanation }) {
 
 function RiskHistoryItem({ record, expanded, onToggle }) {
   const isAi = record.explanation?.method === "ai";
-  const isRange = record.explanation?.method === "range";
+  const isFormula = record.explanation?.method === "formula";
+  const hasFormulaResult = isFormula && record.explanation?.result;
   return (
     <div className="risk-history-item">
       <button className="risk-history-summary" onClick={onToggle}>
         <span className="risk-history-summary-main">
-          <span
-            className={`method-badge ${isAi ? "ai" : isRange ? "range" : "formula"}`}
-          >
-            {isAi ? "ИИ" : isRange ? "Диапазон" : "Формула"}
+          <span className={`method-badge ${isAi ? "ai" : "formula"}`}>
+            {isAi ? "ИИ" : "Формула"}
           </span>
           {record.summary}
         </span>
@@ -904,8 +1049,8 @@ function RiskHistoryItem({ record, expanded, onToggle }) {
       {expanded &&
         (isAi ? (
           <AiExplanationView explanation={record.explanation} />
-        ) : isRange ? (
-          <RangeExplanationView explanation={record.explanation} />
+        ) : hasFormulaResult ? (
+          <FormulaExplanationView explanation={record.explanation} />
         ) : (
           <ExplanationView explanation={record.explanation} />
         ))}
@@ -953,7 +1098,7 @@ function LoginScreen({ onSubmit }) {
             <span className="feature-icon">
               <MapPinned size={16} />
             </span>
-            Карта риска: формула, диапазон или ИИ-модель по точке
+            Карта риска: формула или ИИ-модель по точке
           </li>
           <li>
             <span className="feature-icon">
@@ -1014,8 +1159,6 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [baseLayer, setBaseLayer] = useState("scheme");
   const [riskMethod, setRiskMethod] = useState("formula");
-  const [rangeRoadDistance, setRangeRoadDistance] = useState("");
-  const [rangeSettlementDistance, setRangeSettlementDistance] = useState("");
   const [historyTab, setHistoryTab] = useState("risk");
 
   const [uploads, setUploads] = useState([]);
@@ -1042,6 +1185,11 @@ export default function App() {
   const [roads, setRoads] = useState(null);
   const [roadsError, setRoadsError] = useState("");
   const [roadsStatus, setRoadsStatus] = useState(null);
+  const [osmRoads, setOsmRoads] = useState(null);
+  const [settlements, setSettlements] = useState(null);
+  const [settlementsError, setSettlementsError] = useState("");
+  const settlementsRef = useRef({ data: null, lat: null, lon: null });
+  const settlementsRequestRef = useRef(null);
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [pointRisk, setPointRisk] = useState(null);
   const [riskLoading, setRiskLoading] = useState(false);
@@ -1135,6 +1283,80 @@ export default function App() {
     }
   }
 
+  async function ensureOsmRoads(lat, lon) {
+    if (!token) return null;
+    try {
+      const data = await getOsmRoads(token, lat, lon, 5000);
+      setOsmRoads(data);
+      return data;
+    } catch {
+      setOsmRoads(null);
+      return null;
+    }
+  }
+
+  async function ensureSettlements(lat, lon) {
+    if (!token) return null;
+    const cached = settlementsRef.current;
+    if (
+      cached.data &&
+      cached.lat != null &&
+      haversineMeters({ lat, lng: lon }, { lat: cached.lat, lng: cached.lon }) < 15000
+    ) {
+      return cached.data;
+    }
+    if (settlementsRequestRef.current) return settlementsRequestRef.current;
+    const request = getSettlements(token, lat, lon, 40000)
+      .then((data) => {
+        const payload = data || { type: "FeatureCollection", features: [] };
+        settlementsRef.current = { data: payload, lat, lon };
+        setSettlements(payload);
+        setSettlementsError("");
+        return payload;
+      })
+      .catch((error) => {
+        setSettlementsError(
+          error.message ||
+            "Не удалось загрузить населённые пункты для карты. Формула использует резервный источник."
+        );
+        return null;
+      })
+      .finally(() => {
+        settlementsRequestRef.current = null;
+      });
+    settlementsRequestRef.current = request;
+    return request;
+  }
+
+  useEffect(() => {
+    if (!token || activeTab !== "map" || settlementsRef.current.data) {
+      return undefined;
+    }
+    let cancelled = false;
+    getSettlements(token, DEFAULT_CENTER[0], DEFAULT_CENTER[1], 40000)
+      .then((data) => {
+        if (cancelled || !data) return;
+        settlementsRef.current = {
+          data,
+          lat: DEFAULT_CENTER[0],
+          lon: DEFAULT_CENTER[1],
+        };
+        setSettlements(data);
+        setSettlementsError("");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSettlementsError(
+            error.message ||
+              "Не удалось загрузить населённые пункты для карты. Формула использует резервный источник."
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, activeTab]);
+
   useEffect(() => {
     loadRoads();
     loadUploads();
@@ -1208,6 +1430,10 @@ export default function App() {
     setMobileNavOpen(false);
     setRoads(null);
     setRoadsStatus(null);
+    setSettlements(null);
+    setSettlementsError("");
+    settlementsRef.current = { data: null, lat: null, lon: null };
+    setOsmRoads(null);
     setSelectedPoint(null);
     setPointRisk(null);
     setPlacingPoint(false);
@@ -1239,20 +1465,24 @@ export default function App() {
     setRiskError("");
     setPointRisk(null);
     try {
-      const overrides =
-        method === "range"
-          ? {
-              roadDistanceM: parseOptionalDistance(rangeRoadDistance),
-              settlementDistanceM: parseOptionalDistance(rangeSettlementDistance),
-            }
-          : {};
+      let distances = {};
+      if (method === "formula") {
+        // Distances are measured in the Leaflet module against the layers
+        // displayed on the map; the backend receives the two values.
+        // Without an uploaded SHP roads layer, the roads come from OSM around the point.
+        const roadsData = roads || (await ensureOsmRoads(latlng.lat, latlng.lng));
+        const settlementsData =
+          settlementsRef.current.data ||
+          (await ensureSettlements(latlng.lat, latlng.lng));
+        distances = mapDistancesForPoint(latlng, roadsData, settlementsData);
+      }
       const risk = await getPointRisk(
         token,
         latlng.lat,
         latlng.lng,
         method,
         1,
-        overrides
+        distances
       );
       setPointRisk(risk);
       loadRiskHistory();
@@ -1508,8 +1738,8 @@ export default function App() {
                 <div>
                   <h2>Карта риска</h2>
                   <p className="muted">
-                    Поставьте точку, выберите метод расчёта и сравните результат
-                    формулы с оценкой ИИ-модели.
+                    Поставьте точку — расстояния до дороги и населённого пункта
+                    измеряются по слоям карты, затем рассчитывается вероятность.
                   </p>
                 </div>
                 <div className="layer-switcher">
@@ -1531,16 +1761,26 @@ export default function App() {
               {roadsError && (
                 <Alert type="warning">
                   <p>
-                    <strong>Дороги из SHP ещё не загружены.</strong> Формула и
-                    диапазон могут использовать резервный слой OSM; если он
-                    недоступен, дорожный фактор не учитывается, а для диапазона
-                    можно указать расстояния вручную. Для точного расчёта загрузите
-                    shapefile (.shp, .shx, .dbf, .prj) во вкладке «Дороги».
+                    <strong>Дороги из SHP ещё не загружены.</strong> Расстояние до
+                    дороги вычисляется по слою карты; пока слой недоступен,
+                    используется резервный источник OSM. Для точного расчёта
+                    загрузите shapefile (.shp, .shx, .dbf, .prj) во вкладке
+                    «Дороги».
                   </p>
                   <p className="roads-hint-detail">{roadsError}</p>
                   <button className="btn-sm" onClick={() => goTo("roads")}>
                     Перейти к загрузке SHP
                   </button>
+                </Alert>
+              )}
+
+              {settlementsError && (
+                <Alert type="warning">
+                  <p>
+                    <strong>Слой населённых пунктов недоступен.</strong>{" "}
+                    Расстояние до населённого пункта будет взято из резервного
+                    источника OSM. {settlementsError}
+                  </p>
                 </Alert>
               )}
 
@@ -1574,6 +1814,27 @@ export default function App() {
                         pathOptions={{ color: "#d97706", weight: 2.5, opacity: 0.9 }}
                       />
                     )}
+                    {!roads && osmRoads?.features?.length > 0 && (
+                      <GeoJSON
+                        data={osmRoads}
+                        pathOptions={{ color: "#f59e0b", weight: 2, opacity: 0.8, dashArray: "4 4" }}
+                      />
+                    )}
+                    {settlements?.features?.length > 0 && (
+                      <GeoJSON
+                        data={settlements}
+                        pointToLayer={(_feature, latlng) =>
+                          L.circleMarker(latlng, {
+                            radius: 4,
+                            color: "#1d4ed8",
+                            weight: 1,
+                            fillColor: "#60a5fa",
+                            fillOpacity: 0.9,
+                          })
+                        }
+                        style={{ color: "#1d4ed8", weight: 1, fillOpacity: 0.75 }}
+                      />
+                    )}
                     {selectedPoint && (
                       <Marker position={[selectedPoint.lat, selectedPoint.lng]}>
                         <Popup>
@@ -1584,15 +1845,10 @@ export default function App() {
                           ) : pointRisk ? (
                             <div>
                               <strong>
-                                {pointRisk.method === "range"
-                                  ? formatPercent(pointRisk.fire_probability * 100)
-                                  : (pointRisk.fire_probability * 100).toFixed(1)}
-                                % ·{" "}
+                                {formatPercent(pointRisk.fire_probability * 100)}% ·{" "}
                                 {pointRisk.method === "ai"
                                   ? "ИИ-модель"
-                                  : pointRisk.method === "range"
-                                    ? "диапазон"
-                                    : "формула"}
+                                  : "формула"}
                               </strong>
                               <div style={{ margin: "6px 0" }}>
                                 <RiskBadge level={pointRisk.risk_level} />
@@ -1618,33 +1874,20 @@ export default function App() {
                                   ).toFixed(1)}
                                   %
                                 </>
-                              ) : pointRisk.method === "range" ? (
-                                <>
-                                  Нижняя:{" "}
-                                  {formatPercent(
-                                    pointRisk.probability_range?.lower?.percent
-                                  )}
-                                  %
-                                  <br />
-                                  Средняя:{" "}
-                                  {formatPercent(
-                                    pointRisk.probability_range?.base?.percent
-                                  )}
-                                  %
-                                  <br />
-                                  Верхняя:{" "}
-                                  {formatPercent(
-                                    pointRisk.probability_range?.upper?.percent
-                                  )}
-                                  %
-                                </>
                               ) : (
                                 <>
-                                  P_base:{" "}
-                                  {(pointRisk.base_probability * 100).toFixed(1)}%
+                                  λ:{" "}
+                                  {formatVal(
+                                    pointRisk.explanation?.result
+                                      ?.lambda_per_ha_year
+                                  )}{" "}
+                                  пож./(га·год)
                                   <br />
-                                  P_fire:{" "}
-                                  {(pointRisk.fire_probability * 100).toFixed(1)}%
+                                  P:{" "}
+                                  {formatPercent(
+                                    pointRisk.explanation?.result?.percent
+                                  )}
+                                  %
                                 </>
                               )}
                             </div>
@@ -1671,14 +1914,6 @@ export default function App() {
                         <Activity size={15} /> Формула
                       </button>
                       <button
-                        className={
-                          riskMethod === "range" ? "method-btn active" : "method-btn"
-                        }
-                        onClick={() => handleMethodChange("range")}
-                      >
-                        <Ruler size={15} /> Диапазон
-                      </button>
-                      <button
                         className={riskMethod === "ai" ? "method-btn active" : "method-btn"}
                         onClick={() => handleMethodChange("ai")}
                       >
@@ -1687,54 +1922,9 @@ export default function App() {
                     </div>
                     <p className="method-note">
                       {riskMethod === "formula"
-                        ? "Погода, дороги, поселения и сезон. Быстрый объяснимый расчёт."
-                        : riskMethod === "range"
-                          ? "Нижняя, средняя и верхняя годовые вероятности по расстояниям до дорог и поселений. Площадь — 1 га."
-                          : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
+                        ? "Годовая вероятность по расстояниям до дороги и населённого пункта, измеренным на карте."
+                        : "Классификация космоснимка участка моделью SigLIP2. Результат отличается от формулы."}
                     </p>
-                    {riskMethod === "range" && (
-                      <div className="range-manual">
-                        <p>
-                          Пусто — автоматически по SHP/OSM. Если слоёв нет, укажите
-                          расстояния вручную.
-                        </p>
-                        <div className="range-manual-grid">
-                          <label>
-                            <span>До дороги, м</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              placeholder="авто"
-                              value={rangeRoadDistance}
-                              onChange={(event) =>
-                                setRangeRoadDistance(event.target.value)
-                              }
-                            />
-                          </label>
-                          <label>
-                            <span>До поселения, м</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              placeholder="авто"
-                              value={rangeSettlementDistance}
-                              onChange={(event) =>
-                                setRangeSettlementDistance(event.target.value)
-                              }
-                            />
-                          </label>
-                        </div>
-                        <button
-                          className="btn-primary btn-sm"
-                          onClick={() => calculateRisk(selectedPoint, "range")}
-                          disabled={!selectedPoint || riskLoading}
-                        >
-                          Применить расстояния
-                        </button>
-                      </div>
-                    )}
                     {riskMethod === "ai" && (
                       <div className={`method-model-state ${fireStatus?.state || "unknown"}`}>
                         <span>
@@ -1769,9 +1959,7 @@ export default function App() {
                       <span className="spinner lg" />
                       {riskMethod === "ai"
                         ? "Классификация космоснимка участка…"
-                        : riskMethod === "range"
-                          ? "Расчёт нижней, средней и верхней вероятности…"
-                          : "Расчёт вероятности…"}
+                        : "Расчёт вероятности по слоям карты…"}
                     </div>
                   ) : riskError ? (
                     <div className="explanation-placeholder error">
@@ -1789,19 +1977,14 @@ export default function App() {
                     <>
                       <div className={`risk-hero ${pointRisk.risk_level || "low"}`}>
                         <div className="risk-hero-value">
-                          {pointRisk.method === "range"
-                            ? formatPercent(pointRisk.fire_probability * 100)
-                            : (pointRisk.fire_probability * 100).toFixed(1)}
-                          %
+                          {formatPercent(pointRisk.fire_probability * 100)}%
                         </div>
                         <div className="risk-hero-meta">
                           <RiskBadge level={pointRisk.risk_level} />
                           <span>
                             {pointRisk.method === "ai"
                               ? "по снимку · текущий сезон"
-                              : pointRisk.method === "range"
-                                ? "базовый сценарий · за год"
-                                : "в текущем пожароопасном сезоне"}
+                              : "по слоям карты · за год"}
                           </span>
                         </div>
                         <div className="risk-hero-facts">
@@ -1824,24 +2007,15 @@ export default function App() {
                           <div className="risk-fact">
                             <span>Метод</span>
                             <strong>
-                              {pointRisk.method === "ai"
-                                ? "ИИ-модель"
-                                : pointRisk.method === "range"
-                                  ? "Диапазон"
-                                  : "Формула"}
+                              {pointRisk.method === "ai" ? "ИИ-модель" : "Формула"}
                             </strong>
                           </div>
                         </div>
                       </div>
                       {pointRisk.method === "ai" ? (
                         <AiExplanationView explanation={pointRisk.explanation} />
-                      ) : pointRisk.method === "range" ? (
-                        <RangeExplanationView
-                          range={pointRisk.probability_range}
-                          explanation={pointRisk.explanation}
-                        />
                       ) : (
-                        <ExplanationView explanation={pointRisk.explanation} />
+                        <FormulaExplanationView explanation={pointRisk.explanation} />
                       )}
                     </>
                   ) : (
@@ -1849,17 +2023,13 @@ export default function App() {
                       <span className="empty-state-icon">
                         {riskMethod === "ai" ? (
                           <BrainCircuit size={22} />
-                        ) : riskMethod === "range" ? (
-                          <Ruler size={22} />
                         ) : (
                           <MapPinned size={22} />
                         )}
                       </span>
                       {riskMethod === "ai"
                         ? "Поставьте точку — модель классифицирует космоснимок участка."
-                        : riskMethod === "range"
-                          ? "Поставьте точку — рассчитаем нижнюю, среднюю и верхнюю вероятность по расстояниям."
-                          : "Поставьте точку — формула рассчитает вероятность и покажет факторы."}
+                        : "Поставьте точку — расстояния до дороги и населённого пункта будут измерены по слоям карты."}
                     </div>
                   )}
                 </aside>
