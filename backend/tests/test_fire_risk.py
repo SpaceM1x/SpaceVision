@@ -54,7 +54,7 @@ def test_far_shp_road_matches_no_road():
 def test_base_probability_no_data_is_low():
     # Absence of OSM data must NOT become an artificial medium risk.
     p = _base()
-    assert 0.05 <= p <= 0.12
+    assert 0.0005 <= p <= 0.01
 
 
 def test_base_probability_near_road_above_no_data():
@@ -106,4 +106,33 @@ def test_base_probability_clear_spatial_separation():
         road_density=0.5,
         settlement_density=0.5,
     )
-    assert road_settlement - deep_forest > 0.15
+    # The recalibrated model is deliberately low in winter, so the absolute
+    # difference is smaller than in the old ~10% baseline.  The relative
+    # separation must still be an order of magnitude.
+    assert road_settlement > deep_forest * 10
+
+
+def test_fire_weather_index_increases_risk():
+    dry = _base(
+        road_distance_m=100.0,
+        settlement_distance_m=500.0,
+        road_density=0.3,
+        settlement_density=0.3,
+        fire_weather_index=0.9,
+    )
+    wet = _base(
+        road_distance_m=100.0,
+        settlement_distance_m=500.0,
+        road_density=0.3,
+        settlement_density=0.3,
+        fire_weather_index=0.0,
+    )
+    assert dry > wet
+
+
+def test_risk_levels_follow_recalibrated_thresholds():
+    from app.fire_risk import risk_level_from_probability
+
+    assert risk_level_from_probability(0.5) == "low"
+    assert risk_level_from_probability(2.0) == "medium"
+    assert risk_level_from_probability(10.0) == "high"

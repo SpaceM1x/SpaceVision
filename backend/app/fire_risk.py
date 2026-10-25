@@ -5,6 +5,7 @@
     logit(P) = B0 + B_ROAD·x_road + B_SETTLEMENT·x_settlement
                   + B_ROAD_DENSITY·ρ_roads + B_SETTLEMENT_DENSITY·ρ_settlements
                   + B_SEASON·season + B_DIURNAL·diurnal
+                  + B_FIRE_WEATHER·fwi
                   + B_INTERACTION·x_road·x_settlement
 
     P_base = 1 / (1 + exp(−logit(P)))
@@ -25,15 +26,18 @@ from datetime import datetime
 
 from .road_influence import road_influence
 
-# Logistic coefficients (log-odds units).
-B0 = -2.7
-B_ROAD = 0.55
-B_SETTLEMENT = 0.65
-B_ROAD_DENSITY = 0.35
-B_SETTLEMENT_DENSITY = 0.25
-B_SEASON = 0.60
-B_DIURNAL = 0.40
-B_INTERACTION = 0.50
+# Logistic coefficients (log-odds units).  The intercept is intentionally low:
+# an average remote point should not show a double-digit annual probability.
+# The weather term (Nesterov index) supplies most of the temporal variation.
+B0 = -7.0
+B_ROAD = 1.6
+B_SETTLEMENT = 1.0
+B_ROAD_DENSITY = 0.5
+B_SETTLEMENT_DENSITY = 0.3
+B_SEASON = 0.6
+B_DIURNAL = 0.2
+B_INTERACTION = 0.6
+B_FIRE_WEATHER = 2.4
 
 # Default road-influence scale used when no explicit R0 is supplied.
 DEFAULT_ROAD_R0_METERS = 500.0
@@ -97,6 +101,7 @@ def _base_components(
     lon: float,
     road_distance_shp_m: float | None = None,
     road_r0_m: float = DEFAULT_ROAD_R0_METERS,
+    fire_weather_index: float = 0.0,
 ) -> dict:
     """Compute every logit feature of the model and the resulting probability."""
     effective_road_distance, road_source = _effective_road_distance(
@@ -116,6 +121,7 @@ def _base_components(
     settlement_density = _clamp01(settlement_density or 0.0)
     season = _seasonal_factor(now_utc.month)
     diurnal = _diurnal_factor(now_utc, lon)
+    fire_weather = _clamp01(fire_weather_index or 0.0)
     interaction = road_proximity * settlement_proximity
 
     coefficients = {
@@ -126,6 +132,7 @@ def _base_components(
         "settlement_density": B_SETTLEMENT_DENSITY,
         "season": B_SEASON,
         "diurnal": B_DIURNAL,
+        "fire_weather": B_FIRE_WEATHER,
         "interaction": B_INTERACTION,
     }
 
@@ -137,6 +144,7 @@ def _base_components(
     settlement_density_contribution = B_SETTLEMENT_DENSITY * settlement_density
     season_contribution = B_SEASON * season
     diurnal_contribution = B_DIURNAL * diurnal
+    fire_weather_contribution = B_FIRE_WEATHER * fire_weather
     interaction_contribution = B_INTERACTION * interaction
 
     logit = (
@@ -147,6 +155,7 @@ def _base_components(
         + settlement_density_contribution
         + season_contribution
         + diurnal_contribution
+        + fire_weather_contribution
         + interaction_contribution
     )
     p_base = _sigmoid(logit)
@@ -165,6 +174,7 @@ def _base_components(
         "season_month": now_utc.month,
         "season": season,
         "diurnal": diurnal,
+        "fire_weather_index": fire_weather,
         "interaction": interaction,
         "coefficients": coefficients,
         "constant": constant,
@@ -174,6 +184,7 @@ def _base_components(
         "settlement_density_contribution": settlement_density_contribution,
         "season_contribution": season_contribution,
         "diurnal_contribution": diurnal_contribution,
+        "fire_weather_contribution": fire_weather_contribution,
         "interaction_contribution": interaction_contribution,
         "logit": logit,
         "p_base": p_base,
@@ -190,6 +201,7 @@ def base_probability(
     lon: float,
     road_distance_shp_m: float | None = None,
     road_r0_m: float = DEFAULT_ROAD_R0_METERS,
+    fire_weather_index: float = 0.0,
 ) -> float:
     """Return the logistic probability ``P_base`` in ``(0, 1)``."""
     return _base_components(
@@ -201,6 +213,7 @@ def base_probability(
         lon=lon,
         road_distance_shp_m=road_distance_shp_m,
         road_r0_m=road_r0_m,
+        fire_weather_index=fire_weather_index,
     )["p_base"]
 
 
@@ -214,6 +227,7 @@ def base_probability_breakdown(
     lon: float,
     road_distance_shp_m: float | None = None,
     road_r0_m: float = DEFAULT_ROAD_R0_METERS,
+    fire_weather_index: float = 0.0,
 ) -> dict:
     """Return the full model breakdown (logit, each factor, the result)."""
     return _base_components(
@@ -225,6 +239,7 @@ def base_probability_breakdown(
         lon=lon,
         road_distance_shp_m=road_distance_shp_m,
         road_r0_m=road_r0_m,
+        fire_weather_index=fire_weather_index,
     )
 
 
@@ -234,9 +249,14 @@ def final_probability(p_base: float) -> float:
 
 
 def risk_level_from_probability(probability: float) -> str:
-    """Map a 0..100 percentage to a risk level."""
-    if probability >= 75:
+    """Map a 0..100 percentage to a risk level.
+
+    The thresholds follow the recalibrated model: a typical remote point is
+    well below 2%, while a dry summer point near a road and a settlement can
+    exceed 10%.
+    """
+    if probability >= 10.0:
         return "high"
-    if probability >= 45:
+    if probability >= 2.0:
         return "medium"
     return "low"
