@@ -78,9 +78,30 @@ export async function clearRoads(token) {
   return parseResponse(response);
 }
 
-export async function getPointRisk(token, lat, lon, method = "formula") {
+export async function getPointRisk(
+  token,
+  lat,
+  lon,
+  method = "formula",
+  areaHa = 1,
+  overrides = {}
+) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    method,
+  });
+  if (method === "range") {
+    params.set("area_ha", String(areaHa));
+    if (overrides.roadDistanceM != null) {
+      params.set("road_distance_m", String(overrides.roadDistanceM));
+    }
+    if (overrides.settlementDistanceM != null) {
+      params.set("settlement_distance_m", String(overrides.settlementDistanceM));
+    }
+  }
   const response = await fetchWithTimeout(
-    `${API_URL}/risk/point?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&method=${encodeURIComponent(method)}`,
+    `${API_URL}/risk/point?${params.toString()}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     },
