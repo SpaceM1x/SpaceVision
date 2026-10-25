@@ -81,6 +81,35 @@ export async function getPointRisk(token, lat, lon) {
   return parseResponse(response);
 }
 
+export async function getFireModelStatus(token) {
+  const response = await fetchWithTimeout(`${API_URL}/ai/fire-risk/status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
+export async function preloadFireModel(token) {
+  const response = await fetchWithTimeout(`${API_URL}/ai/fire-risk/preload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse(response);
+}
+
+export async function classifyFireImage(formData, token) {
+  // The first request may load a ~370 MB model on the server.
+  const response = await fetchWithTimeout(
+    `${API_URL}/ai/fire-risk/image`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+    600000
+  );
+  return parseResponse(response);
+}
+
 export async function getUploads(token) {
   const response = await fetchWithTimeout(`${API_URL}/uploads`, {
     headers: { Authorization: `Bearer ${token}` },

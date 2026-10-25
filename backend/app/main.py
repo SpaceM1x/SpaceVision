@@ -24,6 +24,12 @@ from .database import (
 )
 from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
+from .fire_image import (
+    FireImageModelError,
+    classify_image_bytes,
+    model_status,
+    start_preload,
+)
 from .fire_risk import (
     base_probability_breakdown,
     final_probability,
@@ -41,6 +47,8 @@ from .road_data import (
 )
 from .schemas import (
     AnalyticsSummaryOut,
+    FireImageRiskOut,
+    FireModelStatusOut,
     FireRiskRecordOut,
     LoginRequest,
     LoginResponse,
@@ -487,6 +495,39 @@ def risk_history(
     del current_user
     records = db.query(FireRiskRecord).order_by(FireRiskRecord.created_at.desc()).all()
     return [record.to_out() for record in records]
+
+
+@app.get("/ai/fire-risk/status", response_model=FireModelStatusOut)
+def ai_fire_risk_status(
+    current_user: User = Depends(get_current_user),
+) -> FireModelStatusOut:
+    """Report whether the pretrained image fire-risk model is ready."""
+    del current_user
+    return FireModelStatusOut(**model_status())
+
+
+@app.post("/ai/fire-risk/preload", response_model=FireModelStatusOut)
+def ai_fire_risk_preload(
+    current_user: User = Depends(get_current_user),
+) -> FireModelStatusOut:
+    """Start loading the pretrained model in the background."""
+    del current_user
+    return FireModelStatusOut(**start_preload())
+
+
+@app.post("/ai/fire-risk/image", response_model=FireImageRiskOut)
+async def ai_fire_risk_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> FireImageRiskOut:
+    """Classify an uploaded image with the pretrained fire-risk model."""
+    del current_user
+    data = await file.read()
+    try:
+        result = classify_image_bytes(data)
+    except FireImageModelError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return FireImageRiskOut(**result)
 
 
 @app.post("/uploads", response_model=UploadOut)

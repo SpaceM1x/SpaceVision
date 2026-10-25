@@ -30,6 +30,33 @@ class PointRiskOut(BaseModel):
     explanation: dict[str, Any] | None = None
 
 
+class FireImageClassOut(BaseModel):
+    label: str
+    label_ru: str
+    probability: float
+
+
+class FireImageRiskOut(BaseModel):
+    available: bool
+    model_id: str
+    predicted: str | None = None
+    predicted_ru: str | None = None
+    confidence: float | None = None
+    risk_score: float | None = None
+    risk_level: str | None = None
+    risk_level_ru: str | None = None
+    probabilities: list[FireImageClassOut] = []
+    reason: str | None = None
+
+
+class FireModelStatusOut(BaseModel):
+    enabled: bool
+    model_id: str
+    state: str
+    error: str | None = None
+    labels: list[str] = []
+
+
 class UploadOut(BaseModel):
     id: int
     title: str
