@@ -1,20 +1,47 @@
-"""OSM road/settlement context lookup (Overpass). No data -> None/0."""
+"""OSM road/settlement context lookup (Overpass). No data -> None/0.
+
+The lookup is optional context, not a hard dependency: a failed or slow
+Overpass request must never delay ``/risk/point``. The client therefore uses a
+short timeout, a small in-memory cache and a circuit breaker that disables
+Overpass for a cooldown period after the first failure.
+"""
 from __future__ import annotations
 
 import json
 import math
+import os
 import threading
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+# Overpass is optional context. Disable it with OSM_ENABLED=0 for fully
+# offline/fast operation; the model then falls back to the SHP road layer only.
+_OSM_ENABLED = _env_bool("OSM_ENABLED", True)
+_OSM_TIMEOUT_SECONDS = float(os.environ.get("OSM_TIMEOUT_SECONDS", "1.5"))
+_OSM_FAILURE_COOLDOWN_SECONDS = float(
+    os.environ.get("OSM_FAILURE_COOLDOWN_SECONDS", "300")
+)
+
 # In-memory TTL cache for Overpass results so repeated /risk/point calls for the
 # same location/radius within the window skip the (slow, rate-limited) HTTP call.
-_OSM_CACHE_TTL_SECONDS = 60.0
+_OSM_CACHE_TTL_SECONDS = float(os.environ.get("OSM_CACHE_TTL_SECONDS", "600"))
 _OSM_CACHE_MAX_ENTRIES = 256
 _osm_cache_lock = threading.Lock()
 _osm_query_cache: dict[tuple, tuple[float, dict[str, float | None]]] = {}
+
+# Circuit breaker: once Overpass fails, skip further calls for a while. This is
+# what keeps the first slow request from being repeated for every map click.
+_osm_disabled_until = 0.0
 
 
 def _osm_cache_lookup(key: tuple) -> dict[str, float | None] | None:
@@ -35,9 +62,20 @@ def _osm_cache_store(key: tuple, value: dict[str, float | None]) -> None:
 
 
 def invalidate_osm_cache() -> None:
-    """Drop all cached OSM results (e.g. on demand or in tests)."""
+    """Drop all cached OSM results and reset the circuit breaker."""
+    global _osm_disabled_until
     with _osm_cache_lock:
         _osm_query_cache.clear()
+    _osm_disabled_until = 0.0
+
+
+def _osm_circuit_open() -> bool:
+    return not _OSM_ENABLED or time.monotonic() < _osm_disabled_until
+
+
+def _open_osm_circuit() -> None:
+    global _osm_disabled_until
+    _osm_disabled_until = time.monotonic() + max(0.0, _OSM_FAILURE_COOLDOWN_SECONDS)
 
 
 def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -65,6 +103,9 @@ def _no_osm_data() -> dict[str, float | None]:
 
 
 def _compute_nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
+    if _osm_circuit_open():
+        return _no_osm_data()
+
     place_filter = "city|town|village|hamlet|isolated_dwelling"
     query = f"""
 [out:json][timeout:6];
@@ -78,29 +119,29 @@ out center;
 """
     payload = f"data={quote(query)}".encode("utf-8")
     payload_json: dict[str, object] | None = None
-    endpoints = [
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter",
-    ]
-    for endpoint in endpoints:
-        request = Request(
-            endpoint,
-            data=payload,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "User-Agent": "SpaceVision/1.0",
-                "Accept": "application/json",
-            },
-        )
-        try:
-            with urlopen(request, timeout=4) as response:
-                payload_json = json.loads(response.read().decode("utf-8"))
-            break
-        except (HTTPError, URLError, TimeoutError, ValueError):
-            continue
+    # Use a single endpoint with a short timeout. Trying several public mirrors
+    # sequentially multiplied the worst-case latency by three (12 s+).
+    endpoint = os.environ.get(
+        "OSM_ENDPOINT", "https://overpass-api.de/api/interpreter"
+    )
+    request = Request(
+        endpoint,
+        data=payload,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "User-Agent": "SpaceVision/1.0",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=_OSM_TIMEOUT_SECONDS) as response:
+            payload_json = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+        payload_json = None
 
     if payload_json is None:
+        # Fail fast: don't retry Overpass for every subsequent map click.
+        _open_osm_circuit()
         return _no_osm_data()
 
     road_distances: list[float] = []
@@ -170,7 +211,9 @@ out center;
 
 def nearest_distances_from_osm(lat: float, lon: float, radius_m: int = 12000) -> dict[str, float | None]:
     """OSM context lookup with a ~60s in-memory cache per (location, radius)."""
-    key = (round(float(lat), 5), round(float(lon), 5), int(radius_m))
+    # ~11 m grid: map clicks at nearly the same spot hit the cache instead of
+    # triggering a new Overpass request for every metre of movement.
+    key = (round(float(lat), 4), round(float(lon), 4), int(radius_m))
     cached = _osm_cache_lookup(key)
     if cached is not None:
         return cached
