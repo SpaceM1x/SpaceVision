@@ -48,8 +48,8 @@ def test_area_increases_probability_by_poisson_rule():
     expected = -math.expm1(-result.lambda_per_ha_year * result.area_ha)
     assert result.probability == pytest.approx(expected)
     assert result.percent > 0.1
-    assert result.risk_level == "very_high"
-    assert result.risk_level_ru == "очень высокий"
+    assert result.risk_level == "high"
+    assert result.risk_level_ru == "относительно высокий"
 
 
 def test_invalid_inputs_are_rejected():
@@ -77,8 +77,7 @@ _CUTS = [cut for cut, _, _ in FORMULA_RISK_THRESHOLDS]
         (_CUTS[1] - 1e-9, "low", "низкий"),
         (_CUTS[1], "moderate", "средний"),
         (_CUTS[2], "high", "относительно высокий"),
-        (_CUTS[3], "very_high", "очень высокий"),
-        (10.0, "very_high", "очень высокий"),
+        (10.0, "high", "относительно высокий"),
     ],
 )
 def test_risk_level_thresholds(percent, code, label):

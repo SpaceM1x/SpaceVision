@@ -28,6 +28,17 @@ def _to_uint8(bands: np.ndarray) -> np.ndarray:
     return out
 
 
+def build_road_overlay(mask_path: Path, overlay_path: Path) -> None:
+    """Write a transparent RGBA layer: road pixels red, everything else clear.
+
+    The layer is meant to be drawn over the map, so the basemap stays visible.
+    """
+    mask = np.array(Image.open(mask_path).convert("L")) > 0
+    rgba = np.zeros((*mask.shape, 4), dtype=np.uint8)
+    rgba[mask] = (220, 38, 38, 190)
+    Image.fromarray(rgba, mode="RGBA").save(overlay_path)
+
+
 def convert_tiff_snapshot(source: Path, png_path: Path) -> list[float] | None:
     """Write an 8-bit RGB PNG and return ``[south, west, north, east]`` in WGS84.
 

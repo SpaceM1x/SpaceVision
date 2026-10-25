@@ -39,12 +39,11 @@ LEVEL_NAMES: tuple[tuple[str, str], ...] = (
     ("low", "низкий"),
     ("moderate", "средний"),
     ("high", "относительно высокий"),
-    ("very_high", "очень высокий"),
 )
 
 
 def _thresholds(cuts_percent: tuple[float, ...]) -> tuple[tuple[float, str, str], ...]:
-    """Four cut points (percent) give five levels: below each cut -> that level."""
+    """Cut points (percent): below each cut -> that level, the rest -> the top level."""
     return tuple(
         (cut, code, label) for cut, (code, label) in zip(cuts_percent, LEVEL_NAMES)
     )
@@ -59,11 +58,12 @@ def thresholds_text(thresholds: tuple[tuple[float, str, str], ...]) -> dict[str,
     return text
 
 
-# Formula: classes are 20/40/60/80% of the highest value the formula can give
+# Formula: classes are 20/40/60% of the highest value the formula can give
 # (a point right next to a road and a settlement, LAMBDA0 per hectare).
+# Everything from 60% up is the top level.
 _FORMULA_MAX_PERCENT = (1.0 - math.exp(-LAMBDA0)) * 100.0
 FORMULA_RISK_THRESHOLDS = _thresholds(
-    tuple(share * _FORMULA_MAX_PERCENT for share in (0.2, 0.4, 0.6, 0.8))
+    tuple(share * _FORMULA_MAX_PERCENT for share in (0.2, 0.4, 0.6))
 )
 
 # Kept for the legend text in the explanation.
