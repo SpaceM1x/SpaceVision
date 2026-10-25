@@ -201,3 +201,21 @@ def test_end_to_end_risk_point(roads_shp, monkeypatch, tmp_path, request):
     assert ai_body["explanation"]["ai"]["tile"]["url"].endswith("tile.jpg")
     assert ai_body["summary"].startswith("10.4%")
 
+    # Without a SHP layer the formula falls back to OSM roads, and the AI
+    # method still works because it does not depend on the road network.
+    cleared = client.delete("/roads")
+    assert cleared.status_code == 200, cleared.text
+
+    fallback = client.get("/risk/point", params={"lat": 51.80, "lon": 108.05})
+    assert fallback.status_code == 200, fallback.text
+    fallback_body = fallback.json()
+    assert fallback_body["road_source"] == "osm"
+    assert abs(fallback_body["road_distance_m"] - 120.0) < 1e-6
+    assert fallback_body["explanation"]["road"]["source"] == "osm"
+
+    ai_without_shp = client.get(
+        "/risk/point", params={"lat": 51.80, "lon": 108.05, "method": "ai"}
+    )
+    assert ai_without_shp.status_code == 200, ai_without_shp.text
+    assert ai_without_shp.json()["road_distance_m"] is None
+

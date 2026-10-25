@@ -531,21 +531,26 @@ def point_risk(
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="Некорректные координаты.")
 
-    try:
-        cache = get_roads_cache()
-        if cache is None:
+    cache = get_roads_cache()
+    if cache is None:
+        try:
             cache = build_roads_cache(ROADS_SHP_PATH, METRIC_CRS)
-    except RoadDataError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        except RoadDataError:
+            # The SHP layer is optional: the formula can fall back to OSM,
+            # and the AI method does not need roads at all.
+            cache = None
 
-    metric_crs = cache.metric_crs
-    roads_metric = cache.roads_metric
+    roads_metric = cache.roads_metric if cache is not None else None
+    point_metric = None
+    r = None
+    if cache is not None:
+        transformer = Transformer.from_crs(
+            "EPSG:4326", cache.metric_crs, always_xy=True
+        )
+        x, y = transformer.transform(lon, lat)
+        point_metric = Point(x, y)
+        r = distance_to_nearest_road(point_metric, roads_metric, cache.tree)
 
-    transformer = Transformer.from_crs("EPSG:4326", metric_crs, always_xy=True)
-    x, y = transformer.transform(lon, lat)
-    point_metric = Point(x, y)
-
-    r = distance_to_nearest_road(point_metric, roads_metric, cache.tree)
     influence = road_influence(r, R0_METERS) if r is not None else 0.0
     road_source = "shp" if r is not None else "none"
 
@@ -619,9 +624,16 @@ def point_risk(
     # and time of day. The road factor is taken from the SHP layer (OSM is a
     # fallback when no SHP is available).
     osm_context, weather = _collect_risk_context(lat, lon)
-    if roads_metric is not None and not roads_metric.empty:
+    if (
+        cache is not None
+        and roads_metric is not None
+        and point_metric is not None
+        and not roads_metric.empty
+    ):
         try:
-            shp_density = road_density_near_point(point_metric, roads_metric, cache.tree)
+            shp_density = road_density_near_point(
+                point_metric, roads_metric, cache.tree
+            )
             road_density = min(1.0, shp_density)
         except Exception:  # pragma: no cover - defensive for invalid user geometry
             road_density = 0.0
@@ -647,7 +659,7 @@ def point_risk(
     explanation = _build_risk_explanation(
         lat=lat,
         lon=lon,
-        road_distance_m=r,
+        road_distance_m=base["road_distance_m"],
         settlement_distance_m=osm_context["settlement_distance_m"],
         influence=influence,
         base=base,
@@ -672,7 +684,7 @@ def point_risk(
         lat=lat,
         lon=lon,
         method="formula",
-        road_distance_m=r,
+        road_distance_m=base["road_distance_m"],
         settlement_distance_m=osm_context["settlement_distance_m"],
         road_influence=influence,
         road_source=base["road_source"],
@@ -683,7 +695,7 @@ def point_risk(
             p_fire,
             p_base,
             influence,
-            r,
+            base["road_distance_m"],
             R0_METERS,
             base["road_source"],
             weather=weather,
