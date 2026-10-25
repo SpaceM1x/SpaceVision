@@ -9,6 +9,9 @@ pyproj
 # Point fire-probability model trained on the ISDM registry (ml/fire_point_model)
 scikit-learn
 joblib
+# GeoTIFF snapshots and the ISDM .xls registers
+rasterio
+xlrd
 # AI road-recognition pipeline (optional at startup, required for /uploads)
 torch
 torchvision

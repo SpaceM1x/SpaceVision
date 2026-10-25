@@ -27,6 +27,7 @@ from .database import (
 from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
 from .fire_ml import FireMLError, point_fire_probability
+from .fire_registry import fire_statistics
 from .fire_probability import BETA, GAMMA, LAMBDA0, format_percent, risk_level_from_percent
 from .fire_image import (
     FireImageModelError,
@@ -45,6 +46,7 @@ from .point_probability import (
     DistanceDataError,
     calculate_point_fire_probability,
 )
+from .snapshot import TIFF_EXTENSIONS, SnapshotError, convert_tiff_snapshot
 from .road_data import (
     RoadDataError,
     build_roads_cache,
@@ -101,6 +103,9 @@ def serialize_upload(upload: Upload) -> UploadOut:
     mask_path, overlay_path = _prediction_paths(upload)
     mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
     overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
+    geo_bounds = None
+    if None not in (upload.geo_south, upload.geo_west, upload.geo_north, upload.geo_east):
+        geo_bounds = [upload.geo_south, upload.geo_west, upload.geo_north, upload.geo_east]
     return UploadOut(
         id=upload.id,
         title=upload.title,
@@ -111,6 +116,7 @@ def serialize_upload(upload: Upload) -> UploadOut:
         created_at=upload.created_at,
         mask_url=mask_url,
         overlay_url=overlay_url,
+        geo_bounds=geo_bounds,
     )
 
 
@@ -319,6 +325,13 @@ def settlements_geojson(
             return payload
 
     return settlements_geojson_from_osm(lat, lon, radius_m)
+
+
+@app.get("/stats/fires")
+def fires_statistics_endpoint(current_user: User = Depends(get_current_user)) -> dict:
+    """Fire statistics from the ISDM registry for the statistics module."""
+    del current_user
+    return fire_statistics()
 
 
 @app.get("/roads/osm/geojson")
@@ -752,12 +765,25 @@ async def create_upload(
     parsed_tile_y = parse_tile_value(tile_y, "tile_y")
 
     extension = Path(file.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg"}:
-        raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG.")
-    filename = f"{uuid4().hex}{extension}"
-    destination = UPLOAD_DIR / filename
+    if extension not in {".png", ".jpg", ".jpeg"} | TIFF_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Поддерживаются PNG, JPG, TIFF и GeoTIFF.",
+        )
     content = await file.read()
+    stem = uuid4().hex
+    destination = UPLOAD_DIR / f"{stem}{extension}"
     destination.write_bytes(content)
+    geo_bounds = None
+    if extension in TIFF_EXTENSIONS:
+        # U-Net works on RGB PNG; the TIFF georeference is stored with the upload.
+        png_path = UPLOAD_DIR / f"{stem}.png"
+        try:
+            geo_bounds = convert_tiff_snapshot(destination, png_path)
+        except SnapshotError as error:
+            destination.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        destination = png_path
     try:
         # Imported lazily so the app still starts without the heavy AI stack.
         from .road_inference import run_road_segmentation
@@ -775,6 +801,10 @@ async def create_upload(
         tile_x=parsed_tile_x,
         tile_y=parsed_tile_y,
         uploaded_by=current_user.username,
+        geo_south=geo_bounds[0] if geo_bounds else None,
+        geo_west=geo_bounds[1] if geo_bounds else None,
+        geo_north=geo_bounds[2] if geo_bounds else None,
+        geo_east=geo_bounds[3] if geo_bounds else None,
     )
     db.add(upload)
     db.commit()
