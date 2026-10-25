@@ -1658,6 +1658,20 @@ button[type="submit"]:hover:not(:disabled),
   background: var(--risk-high);
 }
 
+.map-legend i.very_low {
+  background: var(--risk-low);
+  opacity: 0.45;
+}
+
+.map-legend i.moderate {
+  background: var(--risk-medium);
+}
+
+.map-legend i.very_high {
+  background: var(--risk-high);
+  box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.25);
+}
+
 .place-point-control {
   clear: both;
 }

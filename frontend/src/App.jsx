@@ -176,13 +176,19 @@ function RiskLegend() {
     <div className="map-legend" title="Шанс крупного пожара (более 200 га) за год на 1 га">
       <span className="map-legend-note">Шанс крупного пожара за год</span>
       <span>
+        <i className="very_low" /> Очень низкий
+      </span>
+      <span>
         <i className="low" /> Низкий
       </span>
       <span>
-        <i className="medium" /> Средний
+        <i className="moderate" /> Средний
       </span>
       <span>
         <i className="high" /> Высокий
+      </span>
+      <span>
+        <i className="very_high" /> Очень высокий
       </span>
     </div>
   );
