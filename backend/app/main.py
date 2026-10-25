@@ -33,7 +33,7 @@ from .fire_probability import (
     GAMMA,
     LAMBDA0,
     LARGE_FIRE_NOTE,
-    ML_RISK_THRESHOLDS,
+    FORMULA_RISK_THRESHOLDS,
     format_percent,
     risk_level_from_percent,
     thresholds_text,
@@ -496,7 +496,7 @@ def point_risk(
         features = ml["features"]
         probability = ml["probability"]
         percent = probability * 100.0
-        level_code, level_ru = risk_level_from_percent(percent, ML_RISK_THRESHOLDS)
+        level_code, level_ru = risk_level_from_percent(percent)
         road_m = features["dist_road_m"]
         settlement_m = features["dist_settlement_m"]
         summary = (
@@ -531,7 +531,7 @@ def point_risk(
             "risk_level": {
                 "code": level_code,
                 "label_ru": level_ru,
-                "thresholds_percent": thresholds_text(ML_RISK_THRESHOLDS),
+                "thresholds_percent": thresholds_text(FORMULA_RISK_THRESHOLDS),
             },
             "assumptions": [
                 LARGE_FIRE_NOTE,

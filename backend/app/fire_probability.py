@@ -66,10 +66,6 @@ FORMULA_RISK_THRESHOLDS = _thresholds(
     tuple(share * _FORMULA_MAX_PERCENT for share in (0.2, 0.4, 0.6, 0.8))
 )
 
-# ISDM model: classes are the 20/40/60/80th percentiles of the model over random
-# points in Buryatia, so they describe the region relative to itself.
-ML_RISK_THRESHOLDS = _thresholds((0.0016, 0.0025, 0.0033, 0.0041))
-
 # Kept for the legend text in the explanation.
 RISK_THRESHOLDS = FORMULA_RISK_THRESHOLDS
 TOP_RISK_LEVEL = LEVEL_NAMES[-1]
