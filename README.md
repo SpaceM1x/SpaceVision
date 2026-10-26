@@ -236,7 +236,6 @@ backend/            FastAPI (auth, roads, risk, uploads, analytics)
     vector_data.py     загрузка произвольного векторного слоя
     settlement_data.py кэш слоя населённых пунктов
     osm.py             расстояния и GeoJSON населённых пунктов из OSM
-    weather.py         NASA POWER + индекс Нестерова (резервный модуль)
     satellite.py       тайлы Esri World Imagery для ИИ-метода
     fire_image.py      SigLIP2: статус, прогрев, классификация
   tests/               pytest
@@ -246,7 +245,6 @@ frontend/              React + Leaflet
   src/styles.css
 gis/roads/             загруженные Shapefile дорог (в Git не хранятся)
 gis/settlements/       опциональный Shapefile населённых пунктов
-road_segmentation/     код инференса; старые локальные .pth не используются
 ```
 
 ## Запуск

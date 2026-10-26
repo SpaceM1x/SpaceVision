@@ -21,4 +21,6 @@ gis/roads/*
 .DS_Store
 Thumbs.db
 
-road_segmentation/checkpoints/best_road_seg_unet.pth
+
+# Локальный архив старых моделей и неиспользуемых файлов
+archive/
