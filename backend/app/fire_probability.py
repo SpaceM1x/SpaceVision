@@ -28,19 +28,52 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-# Parameters for average Russian conditions (the table from the methodology).
+# Average Russian parameters from the methodology table. The formula deliberately
+# uses national averages; the ISDM-fitted model is a separate, data-driven method.
 LAMBDA0 = 0.0012
-BETA = 0.0025
-GAMMA = 0.0012
+BETA = 0.01
+GAMMA = 0.0001
 
-# Annual probability thresholds, in percent.  These are relative classes for a
-# one-hectare point estimate, not official fire-danger classes.
-RISK_THRESHOLDS: tuple[tuple[float, str, str], ...] = (
-    (0.01, "very_low", "очень низкий"),
-    (0.05, "low", "низкий"),
-    (0.15, "moderate", "умеренный"),
+LEVEL_NAMES: tuple[tuple[str, str], ...] = (
+    ("very_low", "очень низкий"),
+    ("low", "низкий"),
+    ("moderate", "средний"),
+    ("high", "относительно высокий"),
 )
-ELEVATED_LEVEL = ("elevated", "повышенный")
+
+
+def _thresholds(cuts_percent: tuple[float, ...]) -> tuple[tuple[float, str, str], ...]:
+    """Cut points (percent): below each cut -> that level, the rest -> the top level."""
+    return tuple(
+        (cut, code, label) for cut, (code, label) in zip(cuts_percent, LEVEL_NAMES)
+    )
+
+
+def thresholds_text(thresholds: tuple[tuple[float, str, str], ...]) -> dict[str, str]:
+    cuts = [cut for cut, _, _ in thresholds]
+    text = {thresholds[0][1]: f"< {cuts[0]:.4g}"}
+    for index in range(1, len(thresholds)):
+        text[thresholds[index][1]] = f"{cuts[index - 1]:.4g}–{cuts[index]:.4g}"
+    text[LEVEL_NAMES[-1][0]] = f"≥ {cuts[-1]:.4g}"
+    return text
+
+
+# Formula: classes are 20/40/60% of the highest value the formula can give
+# (a point right next to a road and a settlement, LAMBDA0 per hectare).
+# Everything from 60% up is the top level.
+_FORMULA_MAX_PERCENT = (1.0 - math.exp(-LAMBDA0)) * 100.0
+FORMULA_RISK_THRESHOLDS = _thresholds(
+    tuple(share * _FORMULA_MAX_PERCENT for share in (0.2, 0.4, 0.6))
+)
+
+# Kept for the legend text in the explanation.
+RISK_THRESHOLDS = FORMULA_RISK_THRESHOLDS
+TOP_RISK_LEVEL = LEVEL_NAMES[-1]
+
+LARGE_FIRE_NOTE = (
+    "Считаются шансы крупных антропогенных пожаров (более 200 га по реестру ИСДМ), "
+    "а не любых возгораний, таких как костры или сжигание мусора."
+)
 
 
 class FireProbabilityError(ValueError):
@@ -78,8 +111,8 @@ class FireProbabilityResult:
 
     def summary(self) -> str:
         return (
-            f"Годовая вероятность {format_percent(self.percent)}% "
-            f"({self.risk_level_ru}) на {self.area_ha:g} га."
+            f"Годовая вероятность крупного антропогенного пожара (более 200 га) "
+            f"{format_percent(self.percent)}% ({self.risk_level_ru}) на {self.area_ha:g} га."
         )
 
     def explanation(self) -> dict[str, Any]:
@@ -112,7 +145,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по дорогам. Риск падает "
-                        "в e раз примерно на 400 м."
+                        "в e раз примерно на 100 м."
                     ),
                 },
                 "gamma": {
@@ -121,7 +154,7 @@ class FireProbabilityResult:
                     "unit": "1 / м",
                     "description": (
                         "Коэффициент затухания по населённым пунктам. Риск "
-                        "падает в e раз примерно на 830 м."
+                        "падает в e раз примерно на 10 км."
                     ),
                 },
                 "area_ha": {
@@ -171,15 +204,10 @@ class FireProbabilityResult:
             "risk_level": {
                 "code": self.risk_level,
                 "label_ru": self.risk_level_ru,
-                "thresholds_percent": {
-                    "very_low": "< 0.01",
-                    "low": "0.01–0.05",
-                    "moderate": "0.05–0.15",
-                    "elevated": "≥ 0.15",
-                },
+                "thresholds_percent": thresholds_text(FORMULA_RISK_THRESHOLDS),
                 "note": (
-                    "Это относительные классы годовой вероятности для 1 га, "
-                    "а не официальные классы пожарной опасности."
+                    "Классы — доли от максимума формулы (точка у дороги и посёлка). "
+                    "Это относительные классы, а не официальные классы пожарной опасности."
                 ),
             },
             "logic": [
@@ -189,11 +217,13 @@ class FireProbabilityResult:
                 "P = 1 − exp(−λ·A) — вероятность хотя бы одного события при пуассоновском потоке пожаров.",
             ],
             "assumptions": [
+                LARGE_FIRE_NOTE,
+                "Параметры λ₀, β, γ — усреднённые значения по России из методики.",
                 "Расстояния до дорог и населённых пунктов измеряются по слоям карты Leaflet.",
                 "Расстояния измеряются в метрах, площадь — в гектарах.",
                 "Поток пожаров приближённо считается пуассоновским и стационарным в течение года.",
                 "Модель не учитывает тип леса, запас горючего, засуху, рельеф и погоду конкретного дня.",
-                "Результат — вероятность хотя бы одного пожара, а не прогноз площади или тяжести.",
+                "Результат — вероятность хотя бы одного крупного антропогенного пожара, а не прогноз площади или тяжести.",
             ],
         }
 
@@ -212,13 +242,16 @@ def format_percent(percent: float) -> str:
     return f"{value:.2f}"
 
 
-def risk_level_from_percent(percent: float) -> tuple[str, str]:
-    """Return ``(code, russian_label)`` for a formula percentage."""
+def risk_level_from_percent(
+    percent: float,
+    thresholds: tuple[tuple[float, str, str], ...] = FORMULA_RISK_THRESHOLDS,
+) -> tuple[str, str]:
+    """Return ``(code, russian_label)`` for an annual probability in percent."""
     value = float(percent)
-    for threshold, code, label in RISK_THRESHOLDS:
+    for threshold, code, label in thresholds:
         if value < threshold:
             return code, label
-    return ELEVATED_LEVEL
+    return TOP_RISK_LEVEL
 
 
 def _validate_distance(name: str, value: float | None) -> float:

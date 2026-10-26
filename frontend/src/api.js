@@ -142,6 +142,17 @@ export async function getOsmRoads(token, lat, lon, radiusM = 5000) {
   return parseResponse(response);
 }
 
+export async function getFireStatistics(token) {
+  const response = await fetchWithTimeout(
+    `${API_URL}/stats/fires`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    30000
+  );
+  return parseResponse(response);
+}
+
 export async function getFireModelStatus(token) {
   const response = await fetchWithTimeout(`${API_URL}/ai/fire-risk/status`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -179,7 +190,7 @@ export async function getUploads(token) {
 }
 
 export async function uploadTile(formData, token) {
-  // The first request may load the U-Net road model on the server.
+  // The first request may download and load the road segmentation model.
   const response = await fetchWithTimeout(
     `${API_URL}/uploads`,
     {

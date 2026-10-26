@@ -6,11 +6,15 @@ pyjwt
 geopandas
 shapely
 pyproj
-# AI road-recognition pipeline (optional at startup, required for /uploads)
+# Point fire-probability model trained on the ISDM registry (ml/fire_point_model)
+scikit-learn
+joblib
+# GeoTIFF snapshots and the ISDM .xls registers
+rasterio
+xlrd
+# Pretrained satellite-road segmentation (weights are downloaded lazily)
 torch
 torchvision
-segmentation-models-pytorch
-albumentations
 opencv-python-headless
 numpy
 Pillow

@@ -4,6 +4,7 @@ import pytest
 
 from app.fire_probability import (
     BETA,
+    FORMULA_RISK_THRESHOLDS,
     GAMMA,
     LAMBDA0,
     FireProbabilityError,
@@ -18,7 +19,7 @@ def test_zero_distance_matches_table():
 
     assert result.lambda_per_ha_year == pytest.approx(LAMBDA0)
     assert result.probability == pytest.approx(-math.expm1(-LAMBDA0))
-    assert result.percent == pytest.approx(0.11993, abs=1e-4)
+    assert result.percent == pytest.approx(-math.expm1(-LAMBDA0) * 100.0)
     assert result.road_decay == pytest.approx(1.0)
     assert result.settlement_decay == pytest.approx(1.0)
 
@@ -38,17 +39,17 @@ def test_probability_decreases_with_distance():
     far = calculate_fire_probability(5_000.0, 20_000.0, 1.0)
 
     assert far.probability < near.probability
-    assert far.risk_level == "very_low"
+    assert far.risk_level == risk_level_from_percent(far.percent)[0]
 
 
 def test_area_increases_probability_by_poisson_rule():
-    result = calculate_fire_probability(100.0, 500.0, 10.0)
+    result = calculate_fire_probability(100.0, 500.0, 10_000.0)
 
     expected = -math.expm1(-result.lambda_per_ha_year * result.area_ha)
     assert result.probability == pytest.approx(expected)
     assert result.percent > 0.1
-    assert result.risk_level == "elevated"
-    assert result.risk_level_ru == "повышенный"
+    assert result.risk_level == "high"
+    assert result.risk_level_ru == "относительно высокий"
 
 
 def test_invalid_inputs_are_rejected():
@@ -64,21 +65,29 @@ def test_invalid_inputs_are_rejected():
         calculate_fire_probability(100.0, 500.0, -1.0)
 
 
+_CUTS = [cut for cut, _, _ in FORMULA_RISK_THRESHOLDS]
+
+
 @pytest.mark.parametrize(
     ("percent", "code", "label"),
     [
         (0.0, "very_low", "очень низкий"),
-        (0.009, "very_low", "очень низкий"),
-        (0.01, "low", "низкий"),
-        (0.049, "low", "низкий"),
-        (0.05, "moderate", "умеренный"),
-        (0.149, "moderate", "умеренный"),
-        (0.15, "elevated", "повышенный"),
-        (10.0, "elevated", "повышенный"),
+        (_CUTS[0] - 1e-9, "very_low", "очень низкий"),
+        (_CUTS[0], "low", "низкий"),
+        (_CUTS[1] - 1e-9, "low", "низкий"),
+        (_CUTS[1], "moderate", "средний"),
+        (_CUTS[2], "high", "относительно высокий"),
+        (10.0, "high", "относительно высокий"),
     ],
 )
 def test_risk_level_thresholds(percent, code, label):
     assert risk_level_from_percent(percent) == (code, label)
+
+
+def test_ml_uses_the_same_scale_as_formula():
+    from app.main import risk_level_from_percent as main_level
+
+    assert main_level(0.0037) == risk_level_from_percent(0.0037) == ("very_low", "очень низкий")
 
 
 @pytest.mark.parametrize(

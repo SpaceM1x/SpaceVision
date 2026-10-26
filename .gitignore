@@ -20,3 +20,5 @@ gis/roads/*
 .idea/
 .DS_Store
 Thumbs.db
+
+road_segmentation/checkpoints/best_road_seg_unet.pth

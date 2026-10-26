@@ -26,7 +26,18 @@ from .database import (
 )
 from .distance import distance_to_nearest_road
 from .fire_history import FireRiskRecord, record_fire_risk
-from .fire_probability import BETA, GAMMA, LAMBDA0, format_percent
+from .fire_ml import FireMLError, point_fire_probability
+from .fire_registry import fire_statistics
+from .fire_probability import (
+    BETA,
+    GAMMA,
+    LAMBDA0,
+    LARGE_FIRE_NOTE,
+    FORMULA_RISK_THRESHOLDS,
+    format_percent,
+    risk_level_from_percent,
+    thresholds_text,
+)
 from .fire_image import (
     FireImageModelError,
     classify_image_bytes,
@@ -43,6 +54,12 @@ from .osm import (
 from .point_probability import (
     DistanceDataError,
     calculate_point_fire_probability,
+)
+from .snapshot import (
+    TIFF_EXTENSIONS,
+    SnapshotError,
+    build_road_overlay,
+    convert_tiff_snapshot,
 )
 from .road_data import (
     RoadDataError,
@@ -72,7 +89,12 @@ app = FastAPI(title="SpaceVision API (AI + SHP)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_origin_regex=(
         r"^http://("
         r"localhost|127\.0\.0\.1|\[::1\]|"
@@ -80,7 +102,7 @@ app.add_middleware(
         r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|"
         r"192\.168\.\d{1,3}\.\d{1,3}|"
         r"26\.\d{1,3}\.\d{1,3}\.\d{1,3}"
-        r"):5173$"
+        r"):517[34]$"
     ),
     allow_credentials=True,
     allow_methods=["*"],
@@ -96,10 +118,20 @@ def _prediction_paths(upload: Upload) -> tuple[Path, Path]:
     )
 
 
+def _roads_overlay_path(upload: Upload) -> Path:
+    return PREDICTION_DIR / f"{Path(upload.file_path).stem}_roads.png"
+
+
 def serialize_upload(upload: Upload) -> UploadOut:
     mask_path, overlay_path = _prediction_paths(upload)
     mask_url = f"/uploads/{upload.id}/mask" if mask_path.exists() else None
     overlay_url = f"/uploads/{upload.id}/overlay" if overlay_path.exists() else None
+    roads_overlay_url = (
+        f"/uploads/{upload.id}/roads-overlay" if mask_path.exists() else None
+    )
+    geo_bounds = None
+    if None not in (upload.geo_south, upload.geo_west, upload.geo_north, upload.geo_east):
+        geo_bounds = [upload.geo_south, upload.geo_west, upload.geo_north, upload.geo_east]
     return UploadOut(
         id=upload.id,
         title=upload.title,
@@ -110,6 +142,8 @@ def serialize_upload(upload: Upload) -> UploadOut:
         created_at=upload.created_at,
         mask_url=mask_url,
         overlay_url=overlay_url,
+        geo_bounds=geo_bounds,
+        roads_overlay_url=roads_overlay_url,
     )
 
 
@@ -320,6 +354,13 @@ def settlements_geojson(
     return settlements_geojson_from_osm(lat, lon, radius_m)
 
 
+@app.get("/stats/fires")
+def fires_statistics_endpoint(current_user: User = Depends(get_current_user)) -> dict:
+    """Fire statistics from the ISDM registry for the statistics module."""
+    del current_user
+    return fire_statistics()
+
+
 @app.get("/roads/osm/geojson")
 def roads_osm_geojson(
     lat: float,
@@ -431,7 +472,7 @@ def _build_ai_explanation(
 def point_risk(
     lat: float,
     lon: float,
-    method: Literal["formula", "ai"] = "formula",
+    method: Literal["formula", "ai", "ml"] = "formula",
     area_ha: float = Query(1.0, gt=0, le=1_000_000),
     road_distance_m: float | None = Query(None, ge=0),
     settlement_distance_m: float | None = Query(None, ge=0),
@@ -463,6 +504,90 @@ def point_risk(
 
     influence = road_influence(r, R0_METERS) if r is not None else 0.0
     road_source = "shp" if r is not None else "none"
+
+    if method == "ml":
+        try:
+            ml = point_fire_probability(lat, lon)
+        except FireMLError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        features = ml["features"]
+        probability = ml["probability"]
+        percent = probability * 100.0
+        level_code, level_ru = risk_level_from_percent(percent)
+        road_m = features["dist_road_m"]
+        settlement_m = features["dist_settlement_m"]
+        summary = (
+            f"Годовая вероятность крупного антропогенного пожара (более 200 га) "
+            f"{format_percent(percent)}% ({level_ru}) на 1 га по модели реестра ИСДМ."
+        )
+        reason = (
+            f"ИИ-модель по реестру ИСДМ (Бурятия, 2000–2025): шанс крупного антропогенного пожара "
+            f"{format_percent(percent)}% за год на 1 га. Учтены расстояния до дороги "
+            f"({road_m:.0f} м), населённого пункта ({settlement_m:.0f} м), железной "
+            f"дороги, район и месяц. {LARGE_FIRE_NOTE}"
+        )
+        explanation = {
+            "method": "ml",
+            "model": {
+                "name": "Градиентный бустинг (HistGradientBoosting) по реестру ИСДМ",
+                "training": (
+                    "Пожары 2000–2025 (Бурятия), фон 1:1 из случайных точек. "
+                    "Проверка на 2021–2025 (ROC-AUC 0.83)."
+                ),
+            },
+            "coordinates": {"lat": lat, "lon": lon},
+            "features": [
+                {"key": name, "value": value} for name, value in features.items()
+            ],
+            "result": {
+                "lambda_per_ha_year": ml["intensity_per_ha_year"],
+                "intensity_per_ha_year": ml["intensity_per_ha_year"],
+                "probability": probability,
+                "percent": percent,
+            },
+            "risk_level": {
+                "code": level_code,
+                "label_ru": level_ru,
+                "thresholds_percent": thresholds_text(FORMULA_RISK_THRESHOLDS),
+            },
+            "assumptions": [
+                LARGE_FIRE_NOTE,
+                "Интенсивность получена из модели шансов по числу пожаров в год и площади региона.",
+                "Признаки считаются на сервере по слоям заказчика, карта не нужна.",
+                "Месяц берётся текущий; сезон влияет на результат заметно.",
+                "Реестр содержит пожары больше 200 га, мелкие пожары не учтены.",
+            ],
+        }
+
+        record_fire_risk(
+            db,
+            username=current_user.username,
+            lat=lat,
+            lon=lon,
+            fire_probability=probability,
+            risk_level=level_code,
+            summary=summary,
+            explanation=explanation,
+        )
+
+        return PointRiskOut(
+            lat=lat,
+            lon=lon,
+            method="ml",
+            road_distance_m=road_m,
+            settlement_distance_m=settlement_m,
+            road_influence=math.exp(-BETA * road_m),
+            road_source="ml",
+            base_probability=probability,
+            fire_probability=probability,
+            risk_level=level_code,
+            risk_level_ru=level_ru,
+            risk_reason=reason,
+            summary=summary,
+            area_ha=1.0,
+            explanation=explanation,
+        )
 
     if method == "ai":
         status = model_status()
@@ -649,7 +774,7 @@ async def ai_fire_risk_image(
 @app.post("/uploads", response_model=UploadOut)
 async def create_upload(
     file: UploadFile = File(...),
-    title: str = Form(...),
+    title: str = Form(default=""),
     tile_z: str = Form(default=""),
     tile_x: str = Form(default=""),
     tile_y: str = Form(default=""),
@@ -672,17 +797,32 @@ async def create_upload(
     parsed_tile_y = parse_tile_value(tile_y, "tile_y")
 
     extension = Path(file.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg"}:
-        raise HTTPException(status_code=400, detail="Поддерживаются только PNG/JPG.")
-    filename = f"{uuid4().hex}{extension}"
-    destination = UPLOAD_DIR / filename
+    if extension not in TIFF_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Поддерживаются только TIFF и GeoTIFF.")
+    title = (title or "").strip() or Path(file.filename).stem
     content = await file.read()
+    stem = uuid4().hex
+    destination = UPLOAD_DIR / f"{stem}{extension}"
     destination.write_bytes(content)
+    geo_bounds = None
+    if extension in TIFF_EXTENSIONS:
+        # U-Net works on RGB PNG; the TIFF georeference is stored with the upload.
+        png_path = UPLOAD_DIR / f"{stem}.png"
+        try:
+            geo_bounds = convert_tiff_snapshot(destination, png_path)
+        except SnapshotError as error:
+            destination.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        destination = png_path
     try:
         # Imported lazily so the app still starts without the heavy AI stack.
-        from .road_inference import run_road_segmentation
+        from .road_inference import RoadInferenceError, run_road_segmentation
 
         run_road_segmentation(destination, PREDICTION_DIR)
+    except RoadInferenceError as error:
+        if destination.exists():
+            destination.unlink()
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except Exception as error:
         if destination.exists():
             destination.unlink()
@@ -695,6 +835,10 @@ async def create_upload(
         tile_x=parsed_tile_x,
         tile_y=parsed_tile_y,
         uploaded_by=current_user.username,
+        geo_south=geo_bounds[0] if geo_bounds else None,
+        geo_west=geo_bounds[1] if geo_bounds else None,
+        geo_north=geo_bounds[2] if geo_bounds else None,
+        geo_east=geo_bounds[3] if geo_bounds else None,
     )
     db.add(upload)
     db.commit()
@@ -729,6 +873,20 @@ def get_upload_mask(upload_id: int, db: Session = Depends(get_db)):
     if not mask_path.exists():
         raise HTTPException(status_code=404, detail="Mask not found")
     return FileResponse(mask_path)
+
+
+@app.get("/uploads/{upload_id}/roads-overlay")
+def get_upload_roads_overlay(upload_id: int, db: Session = Depends(get_db)):
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    mask_path, _ = _prediction_paths(upload)
+    if not mask_path.exists():
+        raise HTTPException(status_code=404, detail="Mask not found")
+    roads_path = _roads_overlay_path(upload)
+    if not roads_path.exists():
+        build_road_overlay(mask_path, roads_path)
+    return FileResponse(roads_path)
 
 
 @app.get("/uploads/{upload_id}/overlay")
