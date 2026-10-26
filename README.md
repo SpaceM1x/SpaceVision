@@ -30,8 +30,18 @@
 - Загрузка ESRI Shapefile (`.shp`, `.shx`, `.dbf`, `.prj`, опционально `.cpg`).
   Файл `.prj` обязателен: CRS не угадывается.
 - Слой сразу используется на карте риска для расстояния до дороги и плотности.
-- Распознавание дорог по космоснимку нейросетью U-Net: маска и оверлей.
+- Распознавание дорог на космоснимках моделью сегментации OpenEarthMap:
+  единая маска обычных и видимых грунтовых дорог, а также оверлей.
 - Очистка загруженных SHP и история обработанных снимков.
+
+Для распознавания используется UPerNet-модель с классом `road`, обученная на
+спутниковых снимках OpenEarthMap. Изображение обрабатывается перекрывающимися
+тайлами 512×512, чтобы не терять узкие дороги при уменьшении крупных GeoTIFF.
+Обычные и грунтовые дороги попадают в одну маску, если различимы на исходном
+снимке; модель не определяет тип покрытия отдельно. При первом распознавании
+веса (около 240 МБ) скачиваются с Hugging Face и далее берутся из локального
+кэша. В карточке источника модели лицензия не указана — проверьте условия её
+использования перед коммерческим развёртыванием.
 
 ### Остальное
 - **ИИ-оценка снимка** — предобученная модель SigLIP2
@@ -236,7 +246,7 @@ frontend/              React + Leaflet
   src/styles.css
 gis/roads/             загруженные Shapefile дорог (в Git не хранятся)
 gis/settlements/       опциональный Shapefile населённых пунктов
-road_segmentation/     чекпоинт модели U-Net
+road_segmentation/     код инференса; старые локальные .pth не используются
 ```
 
 ## Запуск
@@ -279,9 +289,13 @@ cd frontend && npm run build
 | `FIRE_RISK_MODEL_ID` | идентификатор модели на Hugging Face | `prithivMLmods/Fire-Risk-Detection` |
 | `FIRE_RISK_MODEL_CACHE_DIR` | каталог кэша весов | кэш Hugging Face |
 | `FIRE_RISK_MAX_IMAGE_BYTES` | максимальный размер снимка | `20971520` |
+| `ROAD_SEGMENTATION_MODEL_ID` | Hugging Face ID модели дорог | `kishan4444/upernet-swin-openearthmap-road-segmentation` |
+| `ROAD_MODEL_CACHE_DIR` | каталог кэша модели дорог | кэш Hugging Face |
+| `ROAD_MODEL_DEVICE` | устройство инференса (`cpu`, `cuda`) | автоопределение |
+| `ROAD_SEGMENTATION_THRESHOLD` | порог вероятности класса дороги | `0.35` |
 
 ## Технологии
 
 FastAPI, SQLAlchemy (SQLite), PyJWT, GeoPandas/Shapely/PyProj, React, Leaflet,
-react-leaflet, PyTorch + segmentation-models-pytorch (сегментация дорог),
+react-leaflet, PyTorch + Transformers/UPerNet (сегментация дорог),
 Transformers + SigLIP2 (предсказание класса поверхности по снимку).

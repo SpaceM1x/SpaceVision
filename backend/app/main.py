@@ -89,7 +89,12 @@ app = FastAPI(title="SpaceVision API (AI + SHP)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_origin_regex=(
         r"^http://("
         r"localhost|127\.0\.0\.1|\[::1\]|"
@@ -97,7 +102,7 @@ app.add_middleware(
         r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|"
         r"192\.168\.\d{1,3}\.\d{1,3}|"
         r"26\.\d{1,3}\.\d{1,3}\.\d{1,3}"
-        r"):5173$"
+        r"):517[34]$"
     ),
     allow_credentials=True,
     allow_methods=["*"],
@@ -811,9 +816,13 @@ async def create_upload(
         destination = png_path
     try:
         # Imported lazily so the app still starts without the heavy AI stack.
-        from .road_inference import run_road_segmentation
+        from .road_inference import RoadInferenceError, run_road_segmentation
 
         run_road_segmentation(destination, PREDICTION_DIR)
+    except RoadInferenceError as error:
+        if destination.exists():
+            destination.unlink()
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except Exception as error:
         if destination.exists():
             destination.unlink()

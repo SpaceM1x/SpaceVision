@@ -190,7 +190,7 @@ export async function getUploads(token) {
 }
 
 export async function uploadTile(formData, token) {
-  // The first request may load the U-Net road model on the server.
+  // The first request may download and load the road segmentation model.
   const response = await fetchWithTimeout(
     `${API_URL}/uploads`,
     {
