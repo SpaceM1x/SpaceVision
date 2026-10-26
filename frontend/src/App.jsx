@@ -334,7 +334,7 @@ function Dashboard({ analytics, uploads, riskHistory, username, onNavigate }) {
                 </span>
                 <span className="quick-action-body">
                   <strong>Загрузить снимок</strong>
-                  <span>U-Net распознает дороги</span>
+                  <span>Нейросеть ищет дороги, в том числе грунтовые</span>
                 </span>
               </button>
               <button className="quick-action" onClick={() => onNavigate("map")}>
@@ -1161,7 +1161,7 @@ function LoginScreen({ onSubmit }) {
             <span className="feature-icon">
               <BrainCircuit size={16} />
             </span>
-            Сегментация дорог нейросетью U-Net
+            Поиск дорог на космоснимках, включая грунтовые
           </li>
           <li>
             <span className="feature-icon">
@@ -2110,8 +2110,10 @@ export default function App() {
               <article className="card">
                 <h2>Распознавание дорог по снимку</h2>
                 <p className="muted">
-                  Загрузите GeoTIFF — нейросеть U-Net построит маску дорог и оверлей.
-                  Координаты берутся из файла, снимок можно показать на карте.
+                  Загрузите GeoTIFF — нейросеть построит общую маску видимых дорог,
+                  включая грунтовые. Координаты берутся из файла, снимок можно
+                  показать на карте. При первом запуске веса модели (около 240 МБ)
+                  скачаются автоматически — потребуется интернет.
                 </p>
                 <form onSubmit={handleUploadTile} className="upload-form">
                   <input
@@ -2196,7 +2198,7 @@ export default function App() {
                     <div className="list-main">
                       <div className="list-title">2. Распознавание по снимку</div>
                       <div className="list-sub">
-                        U-Net строит маску дорог и оверлей
+                        Модель OpenEarthMap строит единую маску дорог и оверлей
                       </div>
                     </div>
                   </div>
@@ -2584,9 +2586,6 @@ export default function App() {
     </div>
   );
 }
-
-
-
 
 
 
